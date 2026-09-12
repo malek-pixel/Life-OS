@@ -38,6 +38,8 @@ import {
 } from '../../data/actions';
 import { HABIT_FREQUENCIES, LIFE_AREAS, type Habit } from '../../data/schema';
 import { formatRelativeDay, weekdayInitials, type DayKey } from '../../domain/dates';
+import { achievementName } from '../../domain/achievements';
+import { achievementAlertsEnabled } from '../../domain/nudges';
 import { AppError } from '../../data/errors';
 
 export default function HabitsScreen() {
@@ -208,8 +210,8 @@ function HabitRow({ view, onEdit }: { view: HabitView; onEdit: () => void }) {
           tone: 'xp',
           action: { label: 'Undo', run: () => void toggleHabitLog(view.habit.id) },
         });
-        for (const id of result.unlockedAchievements) {
-          toast.show(`Achievement unlocked · ${id.replace(/-/g, ' ')}`, { tone: 'xp' });
+        if (achievementAlertsEnabled()) for (const id of result.unlockedAchievements) {
+          toast.show(`Achievement unlocked · ${achievementName(id)}`, { tone: 'xp' });
         }
       }
     } catch (err) {

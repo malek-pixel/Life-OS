@@ -13,7 +13,7 @@
  *    once and never rewritten, so the unlock date stays true.
  */
 
-import type { AchievementDef, AchievementUnlock, LifeArea } from '../data/schema';
+import type { AchievementDef, AchievementUnlock } from '../data/schema';
 
 /**
  * The achievement catalogue.
@@ -146,6 +146,11 @@ export const ACHIEVEMENTS: AchievementDef[] = [
 ];
 
 export const ACHIEVEMENTS_BY_ID = new Map(ACHIEVEMENTS.map((a) => [a.id, a]));
+
+/** Display name for an unlock id. Falls back to the id so a toast never blanks. */
+export function achievementName(id: string): string {
+  return ACHIEVEMENTS_BY_ID.get(id)?.name ?? id;
+}
 
 /**
  * Everything the rules need, computed once from stored rows.
@@ -295,4 +300,3 @@ export const TIER_ORDER: Record<AchievementDef['tier'], number> = {
   LEGENDARY: 3,
 };
 
-export type { LifeArea };

@@ -110,17 +110,37 @@ analytics and the Life Map. This is the largest known gap — see §8.
 
 ## 6. API key storage is weaker than the spec assumes
 
-Tech Spec §9 stores the Groq key in `flutter_secure_storage`, which is backed by
-the OS credential store. **A web page has no equivalent.** The key is in
-`localStorage`, which means anyone with access to the browser profile can read
-it.
+Tech Spec §9 stores the Groq key in `flutter_secure_storage`, backed by the OS
+credential store. **A web page has no equivalent, and nothing in this codebase
+describes browser storage as secure.**
 
-This is a genuine reduction in security caused by the platform change, not an
-oversight. It is mitigated where possible — the key is never logged (`redact()`
-in `errors.ts` strips anything key-shaped), never included in exports, and
-displayed masked after entry — and it is stated plainly in Settings → AI rather
-than hidden. If this matters more than the convenience, the right fix is a small
-local proxy holding the key, which would reintroduce a server.
+What web storage actually means here:
+
+- any script running on this origin can read the key, including anything a
+  future dependency pulls in
+- a browser extension with host access can read it
+- anyone who can read this browser profile on disk can read it
+- it is **not encrypted at rest**
+
+Given those constraints, the safest architecture the platform permits is used:
+
+1. **Session scope by default.** The key lives in `sessionStorage`, wiped when
+   the tab closes and not shared with other tabs. This is the shortest exposure
+   a browser allows.
+2. **Persistence is opt-in.** Storing it across restarts uses `localStorage` and
+   requires ticking "Remember on this device", with the tradeoff stated at the
+   point of choice.
+3. **Never logged.** `redact()` in `errors.ts` strips key-shaped tokens from
+   every log line.
+4. **Never exported.** `portability.ts` omits it, so a backup file synced to a
+   cloud drive cannot leak the credential. A test asserts this.
+5. **Never in the bundle.** Entered at runtime, never an env var — a `VITE_`
+   value would be inlined into the build and be public.
+
+The only genuinely secure option is a server holding the key, which this
+architecture deliberately does not have. That is the tradeoff, stated rather
+than papered over, and Settings → AI leads with the warning rather than burying
+it.
 
 ## 7. Business rules defined here
 
@@ -172,7 +192,72 @@ Stated plainly rather than left to be discovered:
   browser (see the session notes): onboarding → goal → task → complete → XP,
   achievement and goal rollup propagating, and persistence across a hard reload.
 
-## 9. Dependencies
+## 9. Implementation audit
+
+A full audit was run against the design, the Dev Master, the Tech Spec and this
+document. Everything below was found and fixed; nothing was added to the product
+surface and no approved functionality was removed.
+
+**Data integrity**
+
+- `hydrate()` awaited 25 reads sequentially inside one IndexedDB transaction. A
+  transaction auto-commits once its request queue drains, so it could close
+  mid-loop and the remaining reads would never resolve — presenting as the app
+  hanging on the boot skeleton, which was observed once. All requests are now
+  issued synchronously before the first await. `persist()` had the same shape
+  and got the same fix.
+- **Import could destroy data.** `replaceAll` cleared in one transaction and
+  wrote in another, so a failure between them wiped the database and restored
+  nothing. Clear and write now share a single transaction: an import either
+  fully replaces the database or leaves it untouched. Covered by tests.
+
+**Decorative controls (master prompt §14)**
+
+Six approved settings had *zero* consumers — `toastReminders`,
+`deadlineWarnings`, `habitNudges`, `achievementAlerts`, `quietHours` and
+`ambientMotion`. They persisted but changed nothing.
+
+Rather than delete approved settings or fake the deferred scheduler, the
+in-app half of the reminder system was implemented in `domain/nudges.ts`:
+at-risk habit streaks, overdue tasks, and goals or projects due within a week,
+surfaced as a dashboard banner and optionally a toast, suppressed during quiet
+hours. Every one of the six now changes observable behaviour, and the
+Notifications screen states plainly that background delivery is not built.
+`atRiskHabits`, which was written and tested but never wired up, now drives the
+habit nudge.
+
+**Functional bugs**
+
+- The palette's "New goal" and "New project" commands discarded the chosen type
+  and opened Quick Capture on Task. The type is now threaded through.
+- Calendar resize wrote to IndexedDB on **every pointermove** — dozens of
+  transactions per gesture. It now previews locally and commits once on release.
+- Achievement toasts printed the raw id ("first blood"). They use the real name.
+- A reminder toast added during this audit used the `error` tone, which is
+  deliberately persistent so failed writes are never missed; reminders stacked
+  up and never dismissed. Caught in the browser, not by tests.
+
+**Design fidelity**
+
+The approved design has a SKELETON LOADING artboard — title bar, four-up stat
+grid, then the 1.55fr/1fr split — that was never implemented. `ScreenSkeleton`
+reproduces that geometry and is now the boot and route-transition fallback.
+
+**Accessibility**
+
+- `--c-text-ghost` (#6A6B74) measured **3.5:1** on the card background and is
+  used for roughly fifty hint and meta strings — below the 4.5:1 AA threshold.
+  Lightened to #7E7F88 (4.7:1), the closest passing value to the original.
+- Link colour used `--c-accent` at **2.6:1**. Links now use the accent tint at
+  5.8:1.
+- A live DOM sweep found no unnamed controls, no unlabelled inputs, one `h1`,
+  three labelled landmarks and a working skip link.
+
+**Dead code** removed: `usePrefersReducedMotion`, `AsyncState`, `SkeletonList`,
+`Alert`, `Chip`, `ChartFrame`, `formatRecurrence`, `Tx.hardDelete`, the
+`SINGLETON` set, and three pointless re-exports.
+
+## 10. Dependencies
 
 Runtime dependencies are `react`, `react-dom` and `react-router-dom`. Nothing
 else. Per master prompt §60 the following were considered and deliberately

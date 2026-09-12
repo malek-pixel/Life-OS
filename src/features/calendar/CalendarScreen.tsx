@@ -250,6 +250,8 @@ function TimeGrid({
   const [drag, setDrag] = useState<{ id: string; offsetMinutes: number; previewStart: number } | null>(
     null,
   );
+  /** Local preview while a resize handle is held; committed once on release. */
+  const [resize, setResize] = useState<{ id: string; end: number } | null>(null);
 
   const hours: number[] = [];
   for (let h = START_HOUR; h <= END_HOUR; h++) hours.push(h);
@@ -390,7 +392,8 @@ function TimeGrid({
           if (index < 0) return null;
 
           const start = drag?.id === item.id ? drag.previewStart : item.start;
-          const duration = item.end - item.start;
+          const previewEnd = resize?.id === item.id ? resize.end : item.end;
+          const duration = previewEnd - item.start;
           const startMinute = minutesIntoDay(start);
           const top = ((startMinute - START_HOUR * 60) / 60) * HOUR_HEIGHT;
           const height = Math.max(20, (duration / 3_600_000) * HOUR_HEIGHT);
@@ -452,15 +455,24 @@ function TimeGrid({
                   aria-label={`Resize "${item.title}"`}
                   onPointerDown={(e) => {
                     e.stopPropagation();
+                    // Preview locally while dragging and commit ONCE on release.
+                    // Writing on every pointermove would put dozens of
+                    // transactions through the data layer for a single gesture.
+                    let latest: number | null = null;
                     const move = (ev: PointerEvent) => {
                       const slot = positionToSlot(ev.clientX, ev.clientY);
                       if (!slot) return;
                       const newEnd = atMinute(toDayKey(item.start), slot.minute);
-                      if (newEnd > item.start) onResize(item, newEnd);
+                      if (newEnd > item.start) {
+                        latest = newEnd;
+                        setResize({ id: item.id, end: newEnd });
+                      }
                     };
                     const up = () => {
                       window.removeEventListener('pointermove', move);
                       window.removeEventListener('pointerup', up);
+                      setResize(null);
+                      if (latest != null && latest !== item.end) onResize(item, latest);
                     };
                     window.addEventListener('pointermove', move);
                     window.addEventListener('pointerup', up);

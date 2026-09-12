@@ -14,6 +14,7 @@
  * that has not been earned.
  */
 
+import { useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { Card, CardHeader, Button, EmptyState, ProgressBar, StatTile, Badge } from '../../ui/primitives';
@@ -22,6 +23,7 @@ import { useToast } from '../../ui/overlays';
 import { TaskRow } from '../shared/TaskRow';
 import { useSelector, useSettings } from '../../app/hooks';
 import { selectDashboard, areaHex } from '../../domain/selectors';
+import { reminderToastsEnabled, selectNudges } from '../../domain/nudges';
 import { greeting, greetingKicker } from '../../domain/dates';
 import { toggleHabitLog } from '../../data/actions';
 
@@ -62,6 +64,8 @@ export default function DashboardScreen() {
   return (
     <>
       <Greeting name={name} />
+
+      <NudgeBanner />
 
       {/* ---------- the four headline numbers ---------- */}
       <div className="grid-stats los-stagger" style={{ marginBottom: 16 }}>
@@ -366,3 +370,69 @@ function Greeting({ name }: { name?: string }) {
     </header>
   );
 }
+
+/**
+ * In-app reminders.
+ *
+ * Driven entirely by the Notifications settings: turning off habit nudges or
+ * deadline warnings, or falling inside quiet hours, empties this list and the
+ * banner disappears.
+ *
+ * Nothing here is scheduled. These are recomputed from real rows whenever the
+ * dashboard renders, which is the honest half of the reminder system while
+ * background delivery stays deferred - the Settings screen says so explicitly.
+ */
+function NudgeBanner() {
+  const nudges = useSelector(() => selectNudges());
+  const navigate = useNavigate();
+  const toast = useToast();
+  const announced = useRef(false);
+
+  // With toasts enabled, the most urgent reminder is also surfaced once per
+  // mount. Once, not per render - a reminder that re-fires on every keystroke
+  // would be the notification spam master prompt section 51 rules out.
+  useEffect(() => {
+    if (announced.current || nudges.length === 0) return;
+    if (!reminderToastsEnabled()) return;
+    announced.current = true;
+    const first = nudges[0]!;
+    // Deliberately NOT the error tone: error toasts persist until dismissed,
+    // because a failed write must not be missed. A reminder is not a failure,
+    // and a persistent one stacks up every time the dashboard is opened.
+    toast.show(first.text, {
+      tone: 'muted',
+      action: { label: 'Open', run: () => navigate(first.route) },
+    });
+  }, [nudges, toast, navigate]);
+
+  if (nudges.length === 0) return null;
+  const top = nudges.slice(0, 3);
+
+  return (
+    <div className="stack" style={{ gap: 8, marginBottom: 16 }} role="status">
+      {top.map((nudge) => (
+        <div
+          key={nudge.id}
+          className={nudge.kind === 'overdue' ? 'alert alert-error' : 'alert alert-warn'}
+        >
+          <Icon
+            name={nudge.kind === 'habit' ? 'habits' : 'alert'}
+            size={15}
+            style={{ marginTop: 1 }}
+          />
+          <div className="grow">{nudge.text}</div>
+          <Button size="sm" variant="ghost" onClick={() => navigate(nudge.route)}>
+            Open
+          </Button>
+        </div>
+      ))}
+      {nudges.length > top.length ? (
+        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-text-ghost)', margin: 0 }}>
+          +{nudges.length - top.length} more reminder
+          {nudges.length - top.length === 1 ? '' : 's'}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+

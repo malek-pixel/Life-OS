@@ -37,8 +37,12 @@ body {
   background: var(--c-accent-selection);
 }
 
+/*
+ * Links use the lighter accent tint, not the accent itself: #9E304A on the card
+ * background is 2.6:1, which fails WCAG AA for text. The tint is 5.8:1.
+ */
 a {
-  color: var(--c-accent);
+  color: var(--c-accent-text);
   text-decoration: none;
 }
 a:hover {
@@ -296,6 +300,21 @@ html[data-large-text='true'] {
 /* Compact rows setting - tightens list density. */
 html[data-compact='true'] {
   --sp-row-y: 7px;
+}
+
+/*
+ * Ambient background motion (Settings > Accessibility).
+ *
+ * Covers the decorative-only animation: the XP bar's scanning highlight and the
+ * skeleton shimmer. Functional motion - entrances, bar growth, press feedback -
+ * is left alone, because turning it off is what "reduce motion" is for.
+ */
+html[data-ambient-motion='false'] .bar-scan {
+  display: none;
+}
+html[data-ambient-motion='false'] .los-skel {
+  animation: none;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 @media print {

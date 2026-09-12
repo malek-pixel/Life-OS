@@ -12,7 +12,6 @@ import { Link, useLocation } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { Button, IconButton } from '../ui/primitives';
 import { NAV_ENTRIES } from './Sidebar';
-import { greeting } from '../domain/dates';
 
 export function TopBar({
   onOpenPalette,
@@ -158,4 +157,3 @@ function title(segment: string): string {
   return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ');
 }
 
-export { greeting };

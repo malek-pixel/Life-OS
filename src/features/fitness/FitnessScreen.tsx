@@ -33,6 +33,8 @@ import { useAction, useSelector } from '../../app/hooks';
 import { selectFitness } from '../../domain/selectors';
 import { deleteWorkout, logWorkout } from '../../data/actions';
 import { formatDuration, formatRelativeDay, toDayKey } from '../../domain/dates';
+import { achievementName } from '../../domain/achievements';
+import { achievementAlertsEnabled } from '../../domain/nudges';
 import { WORKOUT_DISCIPLINES } from '../../data/schema';
 import { store } from '../../data/store';
 import { AppError } from '../../data/errors';
@@ -336,8 +338,8 @@ function WorkoutModal({ open, onClose }: { open: boolean; onClose: () => void })
               const result = await submit.run();
               if (!result) return;
               toast.show(`Session logged · +${result.xpAwarded} XP`, { tone: 'xp' });
-              for (const id of result.unlockedAchievements) {
-                toast.show(`Achievement unlocked · ${id.replace(/-/g, ' ')}`, { tone: 'xp' });
+              if (achievementAlertsEnabled()) for (const id of result.unlockedAchievements) {
+                toast.show(`Achievement unlocked · ${achievementName(id)}`, { tone: 'xp' });
               }
               onClose();
             }}

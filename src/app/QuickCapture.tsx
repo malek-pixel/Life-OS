@@ -41,7 +41,16 @@ const TYPES: Array<{ type: CaptureType; icon: IconName }> = [
   { type: 'Workout', icon: 'fitness' },
 ];
 
-export function QuickCapture({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function QuickCapture({
+  open,
+  onClose,
+  initialType,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Preselects the entity type, e.g. when opened from a palette command. */
+  initialType?: string | null;
+}) {
   const toast = useToast();
   const projects = useCollection('projects');
   const goals = useCollection('goals');
@@ -60,6 +69,8 @@ export function QuickCapture({ open, onClose }: { open: boolean; onClose: () => 
   // A fresh form each time it opens; a stale half-typed capture is confusing.
   useEffect(() => {
     if (!open) return;
+    const preset = TYPES.find((t) => t.type.toLowerCase() === (initialType ?? '').toLowerCase());
+    setType(preset ? preset.type : 'Task');
     setTitle('');
     setBody('');
     setDueAt('');
@@ -69,7 +80,7 @@ export function QuickCapture({ open, onClose }: { open: boolean; onClose: () => 
     setArea('Other');
     setDiscipline('Gym');
     setDuration('45');
-  }, [open]);
+  }, [open, initialType]);
 
   const submit = useAction(async () => {
     const trimmed = title.trim();

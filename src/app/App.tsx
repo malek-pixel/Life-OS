@@ -28,7 +28,7 @@ import { useHotkey, useSettings, useStoreStatus, useViewport } from './hooks';
 import { store } from '../data/store';
 import { updateSettings } from '../data/actions';
 import { ConfirmProvider, ToastProvider } from '../ui/overlays';
-import { ErrorState, SkeletonCards } from '../ui/primitives';
+import { ErrorState, ScreenSkeleton } from '../ui/primitives';
 import { messageForCode, type AppError } from '../data/errors';
 
 /* --- lazily loaded screens --- */
@@ -105,9 +105,8 @@ function Boot() {
 
 function BootSkeleton() {
   return (
-    <div style={{ padding: 28 }} aria-busy="true">
-      <span className="los-sr">Loading Life OS…</span>
-      <SkeletonCards count={4} />
+    <div style={{ padding: 28 }}>
+      <ScreenSkeleton />
     </div>
   );
 }
@@ -119,6 +118,7 @@ function Shell() {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureType, setCaptureType] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Below the compact breakpoint the sidebar collapses regardless of the saved
@@ -194,7 +194,7 @@ function Shell() {
         >
           <div style={{ maxWidth: 1180, margin: '0 auto' }} className="los-screen">
             <ErrorBoundary key={location.pathname}>
-              <Suspense fallback={<SkeletonCards count={3} />}>
+              <Suspense fallback={<ScreenSkeleton />}>
                 <Routes>
                   <Route path="/" element={<Navigate to={settings.defaultScreen} replace />} />
                   <Route path="/dashboard" element={<Dashboard />} />
@@ -232,11 +232,20 @@ function Shell() {
         onClose={() => setPaletteOpen(false)}
         onCapture={(type) => {
           setPaletteOpen(false);
+          // Carry the chosen type through, so "New goal" in the palette opens
+          // capture on Goal rather than silently defaulting to Task.
+          setCaptureType(type);
           setCaptureOpen(true);
-          void type;
         }}
       />
-      <QuickCapture open={captureOpen} onClose={() => setCaptureOpen(false)} />
+      <QuickCapture
+        open={captureOpen}
+        initialType={captureType}
+        onClose={() => {
+          setCaptureOpen(false);
+          setCaptureType(null);
+        }}
+      />
     </div>
   );
 }

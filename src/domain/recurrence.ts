@@ -94,16 +94,6 @@ export function parseRecurrence(rule: string | null): Recurrence | null {
   return { freq, interval, byDay, count, until };
 }
 
-/** Serialises a recurrence back to a rule string. */
-export function formatRecurrence(r: Recurrence): string {
-  const parts = [`FREQ=${r.freq}`];
-  if (r.interval > 1) parts.push(`INTERVAL=${r.interval}`);
-  if (r.byDay.length > 0) parts.push(`BYDAY=${r.byDay.map((d) => DAY_CODES[d]).join(',')}`);
-  if (r.count != null) parts.push(`COUNT=${r.count}`);
-  if (r.until != null) parts.push(`UNTIL=${r.until.replace(/-/g, '')}`);
-  return parts.join(';');
-}
-
 /**
  * Expands a rule into concrete day keys, starting from `start`.
  *

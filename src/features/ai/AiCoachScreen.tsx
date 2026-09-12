@@ -24,7 +24,7 @@ import { useSettings } from '../../app/hooks';
 import { runCoachTurn, callsToday } from '../../ai/coach';
 import { executeConfirmedTool, TOOLS_BY_NAME } from '../../ai/tools';
 import { groqProvider, type AiMessageInput } from '../../ai/provider';
-import { AppError, messageForCode } from '../../data/errors';
+import { AppError } from '../../data/errors';
 import type { AiToolCallRecord } from '../../data/schema';
 
 interface Turn {
@@ -478,4 +478,3 @@ function TurnBubble({
   );
 }
 
-export { messageForCode };

@@ -123,11 +123,6 @@ class Tx {
     return this.put(storeName, value);
   }
 
-  /** Hard delete. Reserved for rows with no history value, e.g. routine steps. */
-  hardDelete<K extends keyof StoreTypes>(storeName: K, id: string): void {
-    this.changes.push({ op: 'delete', store: STORES[storeName], id });
-  }
-
   /**
    * Awards XP.
    *

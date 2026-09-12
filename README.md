@@ -119,9 +119,17 @@ key in Settings → AI.
 - **Usage is logged locally** as a guardrail, so a runaway loop is visible in
   Settings immediately rather than discovered as a broken assistant.
 
-**Key storage caveat, stated plainly:** a browser has no OS keychain. The key is
-in `localStorage` on your device. Anyone with access to this browser profile can
-read it. Use a key scoped to this purpose and revoke it if the machine is shared.
+**Key storage — read this.** A browser has no OS keychain, so **browser storage
+is not secure storage** and nothing here should be read as implying otherwise.
+The key is not encrypted at rest; any script on the page, an extension with
+access to it, or anyone who can read this browser profile can read the key.
+
+Given that, the safest option the platform allows is the default: the key is
+held in `sessionStorage` and **wiped when you close the tab**. Persisting it
+across restarts is an explicit opt-in ("Remember on this device"). The key is
+never logged, never exported, and never baked into the build. The only genuinely
+secure alternative is a server holding it, which this architecture deliberately
+does not have — see [`docs/DECISIONS.md`](docs/DECISIONS.md) §6.
 
 ---
 
@@ -131,13 +139,17 @@ read it. Use a key scoped to this purpose and revoke it if the machine is shared
 npm test
 ```
 
-Two suites, 90 tests, covering what silently corrupts data if wrong:
+Three suites, 104 tests, covering what silently corrupts data if wrong:
 
 - **`test/domain.test.ts`** — the pure logic. Streak calculation including
   protections, custom schedules, weekly targets and the rule that an unlogged
   today is pending rather than a miss; the XP curve and rank ladder; goal and
   project progress including the blend, overrides and division-by-zero; date
   handling across DST, leap years and month boundaries; task-cycle detection.
+- **`test/audit.test.ts`** — the settings-driven reminder logic (each toggle is
+  asserted to actually gate its behaviour), quiet hours, and export/import:
+  round-trip, persistence after restore, rejection leaving existing data intact,
+  and a check that the API key never appears in an export.
 - **`test/actions.test.ts`** — the action layer against a real IndexedDB
   (`fake-indexeddb`), covering the end-to-end flows: goal → project → task →
   complete → progress and XP propagate; habit → streak → XP; recurrence spawning

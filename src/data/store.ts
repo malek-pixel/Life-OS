@@ -22,6 +22,7 @@
 import {
   clearAllData,
   transact,
+  txClear,
   txDelete,
   txGetAll,
   txPut,
@@ -49,9 +50,6 @@ export type Change =
 type Listener = () => void;
 
 const ALL_STORES = Object.values(STORES) as StoreName[];
-
-/** Stores holding exactly one row, read as an object rather than a list. */
-const SINGLETON = new Set<StoreName>([STORES.settings, STORES.characterState]);
 
 function emptyCollections(): Collections {
   const out = {} as Collections;
@@ -95,9 +93,18 @@ export class LifeOsStore {
         const next = emptyCollections();
         // One read transaction across every store: a consistent snapshot, and
         // far fewer round trips than opening one transaction per collection.
+        //
+        // Every request is issued SYNCHRONOUSLY before the first await. An
+        // IndexedDB transaction auto-commits as soon as its request queue
+        // drains, so awaiting each read in turn lets the transaction close
+        // underneath the loop and the remaining reads never resolve - which
+        // presents as the app hanging on the boot skeleton.
         await transact(ALL_STORES, 'readonly', async (tx) => {
-          for (const name of ALL_STORES) {
-            (next as Record<string, unknown[]>)[name] = await txGetAll(tx, name);
+          const pending = ALL_STORES.map((name) =>
+            txGetAll<unknown>(tx, name).then((rows) => [name, rows] as const),
+          );
+          for (const [name, rows] of await Promise.all(pending)) {
+            (next as Record<string, unknown[]>)[name] = rows;
           }
         });
         this.collections = next;
@@ -211,10 +218,14 @@ export class LifeOsStore {
     const stores = Array.from(new Set(changes.map((c) => c.store)));
     try {
       await transact(stores, 'readwrite', async (tx) => {
-        for (const change of changes) {
-          if (change.op === 'put') await txPut(tx, change.store, change.value);
-          else await txDelete(tx, change.store, change.id);
-        }
+        // Issued synchronously, for the same auto-commit reason as hydrate().
+        await Promise.all(
+          changes.map((change) =>
+            change.op === 'put'
+              ? txPut(tx, change.store, change.value)
+              : txDelete(tx, change.store, change.id),
+          ),
+        );
       });
     } catch (err) {
       throw toAppError(err);
@@ -279,17 +290,35 @@ export class LifeOsStore {
    * previous data intact rather than half-replaced.
    */
   async replaceAll(data: Partial<Record<StoreName, unknown[]>>): Promise<void> {
-    const changes: Change[] = [];
+    const incoming = new Map<StoreName, unknown[]>();
     for (const [name, rows] of Object.entries(data) as Array<[StoreName, unknown[]]>) {
       if (!ALL_STORES.includes(name)) continue;
-      for (const row of rows) changes.push({ op: 'put', store: name, value: row });
+      incoming.set(name, rows);
     }
-    await clearAllData();
+
+    // Clearing and rewriting share ONE transaction. Doing it as two - clear,
+    // then write - leaves a window where a failure between them destroys the
+    // existing data and restores nothing. Here the import either fully replaces
+    // the database or leaves it exactly as it was.
+    try {
+      await transact(ALL_STORES, 'readwrite', async (tx) => {
+        const ops: Array<Promise<unknown>> = [];
+        for (const name of ALL_STORES) ops.push(txClear(tx, name));
+        for (const [name, rows] of incoming) {
+          for (const row of rows) ops.push(txPut(tx, name, row));
+        }
+        await Promise.all(ops);
+      });
+    } catch (err) {
+      // Nothing was committed, so memory still matches storage.
+      throw toAppError(err);
+    }
+
     this.collections = emptyCollections();
-    if (changes.length > 0) {
-      await this.persist(changes);
-      this.apply(changes);
+    for (const [name, rows] of incoming) {
+      (this.collections as Record<string, unknown[]>)[name] = [...rows];
     }
+    this.collections = { ...this.collections };
     await this.ensureSingletons();
     this.version++;
     this.notify();
@@ -320,5 +349,3 @@ export class LifeOsStore {
 
 /** The app-wide store instance. */
 export const store = new LifeOsStore();
-
-export { SINGLETON };

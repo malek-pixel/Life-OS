@@ -27,7 +27,13 @@ export const color = {
   textMuted: '#A6A7B0',
   textDim: '#8A8B94',
   textFaint: '#82838D',
-  textGhost: '#6A6B74',
+  /*
+   * Lightened from the design's #6A6B74, which measured 3.5:1 on the card
+   * background and so failed WCAG AA for the hint and meta text it is used for
+   * throughout. #7E7F88 is 4.7:1 on card and 4.9:1 on the app background, and
+   * is the closest value to the original that passes.
+   */
+  textGhost: '#7E7F88',
   textDisabled: '#55565F',
 
   /* --- accent: burgundy. "Burgundy = you", per the design system --- */

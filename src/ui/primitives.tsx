@@ -409,15 +409,6 @@ export function Badge({
   );
 }
 
-export function Chip({ children, icon }: { children: ReactNode; icon?: IconName }) {
-  return (
-    <span className="chip">
-      {icon ? <Icon name={icon} size={12} /> : null}
-      {children}
-    </span>
-  );
-}
-
 /** Priority as a coloured stripe, matching the design's task rows. */
 export function PriorityDot({ priority }: { priority: 'LOW' | 'MEDIUM' | 'HIGH' }) {
   const color =
@@ -510,21 +501,31 @@ export function Skeleton({
   );
 }
 
-/** A skeleton shaped like the list rows it stands in for. */
-export function SkeletonList({ rows = 5 }: { rows?: number }) {
+/**
+ * The screen-transition skeleton from the approved design's SKELETON LOADING
+ * artboard: a title bar, a four-up stat grid, then the 1.55fr/1fr split with a
+ * tall left block and two stacked right blocks.
+ *
+ * Geometry mirrors the real layout (section 16), so swapping it for content
+ * does not shift anything.
+ */
+export function ScreenSkeleton() {
   return (
     <div aria-busy="true" aria-live="polite">
       <span className="los-sr">Loading…</span>
-      {Array.from({ length: rows }, (_, i) => (
-        <div className="skel-row" key={i}>
-          <Skeleton width={19} height={19} radius={6} />
-          <div className="grow stack" style={{ gap: 6 }}>
-            <Skeleton width={`${52 + ((i * 13) % 34)}%`} height={11} />
-            <Skeleton width={`${26 + ((i * 7) % 22)}%`} height={9} />
-          </div>
-          <Skeleton width={34} height={10} />
+      <Skeleton width={180} height={26} style={{ marginBottom: 22 }} />
+      <div className="grid-stats" style={{ marginBottom: 22 }}>
+        {Array.from({ length: 4 }, (_, i) => (
+          <Skeleton key={i} height={84} radius={11} />
+        ))}
+      </div>
+      <div className="grid-2">
+        <Skeleton height={300} radius={11} />
+        <div className="stack" style={{ gap: 16 }}>
+          <Skeleton height={120} radius={11} />
+          <Skeleton height={160} radius={11} />
         </div>
-      ))}
+      </div>
     </div>
   );
 }
@@ -570,25 +571,6 @@ export function EmptyState({
       <h3 className="empty-state-title">{title}</h3>
       <p className="empty-state-body">{body}</p>
       {action ? <div style={{ marginTop: 6 }}>{action}</div> : null}
-    </div>
-  );
-}
-
-export function Alert({
-  tone = 'info',
-  children,
-  action,
-}: {
-  tone?: 'error' | 'warn' | 'info' | 'success';
-  children: ReactNode;
-  action?: ReactNode;
-}) {
-  const icon: IconName = tone === 'error' || tone === 'warn' ? 'alert' : tone === 'success' ? 'check' : 'info';
-  return (
-    <div className={cx('alert', `alert-${tone}`)} role={tone === 'error' ? 'alert' : undefined}>
-      <Icon name={icon} size={15} style={{ marginTop: 1 }} />
-      <div className="grow">{children}</div>
-      {action}
     </div>
   );
 }

@@ -39,7 +39,7 @@ import {
   parseImport,
   type ImportPreview,
 } from '../../data/portability';
-import { AI_MODELS, clearApiKey, maskedKey, setApiKey } from '../../ai/provider';
+import { AI_MODELS, clearApiKey, getKeyScope, maskedKey, setApiKey, type KeyScope } from '../../ai/provider';
 import { callsToday } from '../../ai/coach';
 import { levelForXp } from '../../domain/xp';
 import { formatMonthDay, toDayKey } from '../../domain/dates';
@@ -414,61 +414,41 @@ function NavigationSection() {
 }
 
 function NotificationsSection() {
-  const [permission, setPermission] = useState(
-    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
-  );
-  const toast = useToast();
-
   return (
     <>
+      {/*
+        Stated plainly rather than implying delivery that does not exist.
+        Background scheduling is deferred (docs/DECISIONS.md section 8); what is
+        implemented is the in-app half, and every toggle below drives it.
+      */}
       <Card>
-        <p className="card-kicker">BROWSER NOTIFICATIONS</p>
-        <p style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-dim)', margin: '0 0 14px', lineHeight: 1.65 }}>
-          The spec's Windows toast reminders become browser notifications here. They are scheduled by
-          Life OS itself while a tab is open — there is no push server, so nothing arrives when the
-          app is closed.
-        </p>
-        <div className="row" style={{ gap: 10 }}>
-          <Badge
-            color={permission === 'granted' ? 'var(--c-success)' : 'var(--c-text-muted)'}
-            border={permission === 'granted' ? 'rgba(123,176,138,.4)' : 'var(--c-border-faint)'}
-          >
-            {permission}
-          </Badge>
-          {permission === 'default' ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={async () => {
-                const result = await Notification.requestPermission();
-                setPermission(result);
-                toast.show(
-                  result === 'granted' ? 'Notifications enabled' : 'Notifications not enabled',
-                  { tone: result === 'granted' ? 'ok' : 'muted' },
-                );
-              }}
-            >
-              Allow notifications
-            </Button>
-          ) : null}
+        <p className="card-kicker">HOW REMINDERS WORK TODAY</p>
+        <div className="alert alert-info">
+          <Icon name="info" size={15} style={{ marginTop: 1 }} />
+          <div className="grow">
+            Reminders appear <strong>inside Life OS while it is open</strong> — as a banner on the
+            dashboard and, optionally, as toasts. Background delivery when the app is closed is not
+            built: that needs a scheduler this local-only architecture does not have, and it is
+            tracked as deferred rather than faked. The settings below all take effect immediately.
+          </div>
         </div>
       </Card>
 
       <Group title="REMINDERS">
         <SettingToggle
-          field="toastReminders"
-          label="In-app reminders"
-          description="Toasts for scheduled items while Life OS is open."
+          field="habitNudges"
+          label="Habit nudges"
+          description="Shows a reminder when a streak is scheduled today and still unlogged."
         />
         <SettingToggle
           field="deadlineWarnings"
           label="Deadline warnings"
-          description="Warn before goals and tasks come due."
+          description="Surfaces overdue tasks, and goals or projects due within a week."
         />
         <SettingToggle
-          field="habitNudges"
-          label="Habit nudges"
-          description="A nudge when a streak is at risk of breaking today."
+          field="toastReminders"
+          label="Also show reminders as toasts"
+          description="Off leaves them on the dashboard banner only, rather than interrupting."
         />
       </Group>
 
@@ -476,12 +456,12 @@ function NotificationsSection() {
         <SettingToggle
           field="achievementAlerts"
           label="Achievement alerts"
-          description="Notify when an achievement unlocks."
+          description="Shows a toast the moment an achievement unlocks. The unlock still happens either way."
         />
         <SettingToggle
           field="quietHours"
           label="Quiet hours"
-          description="Silence non-critical alerts between 11pm and 8am."
+          description="Suppresses reminders and achievement toasts between 11pm and 8am."
         />
       </Group>
     </>
@@ -494,81 +474,134 @@ function AiSection() {
   const confirm = useConfirm();
   const [keyInput, setKeyInput] = useState('');
   const [savedKey, setSavedKey] = useState(maskedKey());
+  const [scope, setScope] = useState<KeyScope | null>(getKeyScope());
+  /** Persisting beyond the tab is an explicit opt-in, so this starts false. */
+  const [remember, setRemember] = useState(false);
   const usage = useSelector(() => callsToday());
 
   return (
     <>
       <Card>
         <p className="card-kicker">GROQ API KEY</p>
+
+        {/*
+          Stated up front and without euphemism. Browser storage is not secure
+          storage, and the UI must not imply otherwise.
+        */}
+        <div className="alert alert-warn" style={{ marginBottom: 14 }}>
+          <Icon name="alert" size={15} style={{ marginTop: 1 }} />
+          <div className="grow">
+            <strong>Browser storage is not secure storage.</strong> A web page has no access to an
+            OS keychain, so the key is not encrypted at rest. Any script on this page, a browser
+            extension with access to it, or anyone who can read this browser profile can read the
+            key. Use a key created only for Life OS, and revoke it if this machine is shared.
+          </div>
+        </div>
+
         <p style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-dim)', margin: '0 0 14px', lineHeight: 1.65 }}>
-          Life OS calls Groq directly from this device — no server sits in between. The key is stored
-          in this browser only and is sent nowhere except Groq.{' '}
-          <strong style={{ color: 'var(--c-warn-bright)' }}>
-            Be aware: browser storage is not an OS keychain.
-          </strong>{' '}
-          Anyone with access to this browser profile can read it. Use a key scoped to this purpose
-          and revoke it if the machine is shared.
+          Life OS calls Groq directly from this device — no server sits in between, which is why
+          there is nowhere safer to put the key. It is sent only to Groq, never written to a log,
+          and deliberately excluded from your data export.
         </p>
 
         {savedKey ? (
-          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-            <Badge color="var(--c-success)" border="rgba(123,176,138,.4)">
-              Key set
-            </Badge>
-            <span className="mono" style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-muted)' }}>
-              {savedKey}
-            </span>
-            <span className="grow" />
-            <Button
-              size="sm"
-              variant="danger"
-              onClick={() =>
-                confirm({
-                  title: 'Remove the API key?',
-                  body: 'The coach will stop working until you add a key again. Nothing else in Life OS is affected.',
-                  actionLabel: 'Remove key',
-                  danger: true,
-                  onConfirm: () => {
-                    clearApiKey();
-                    setSavedKey(null);
-                    toast.show('API key removed', { tone: 'muted' });
-                  },
-                })
-              }
-            >
-              Remove
-            </Button>
-          </div>
-        ) : (
-          <div className="row" style={{ gap: 9, alignItems: 'flex-end' }}>
-            <div className="grow">
-              <TextField
-                label="API key"
-                type="password"
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="gsk_…"
-                hint="Free at console.groq.com — no card required."
-                autoComplete="off"
-              />
-            </div>
-            <Button
-              variant="primary"
-              disabled={!keyInput.trim()}
-              onClick={() => {
-                try {
-                  setApiKey(keyInput);
-                  setSavedKey(maskedKey());
-                  setKeyInput('');
-                  toast.show('API key saved', { tone: 'ok' });
-                } catch (err) {
-                  toast.showError(err instanceof AppError ? err.message : 'Could not save the key.');
+          <>
+            <div className="row" style={{ gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+              <Badge color="var(--c-success)" border="rgba(123,176,138,.4)">
+                Key set
+              </Badge>
+              <Badge
+                color={scope === 'session' ? 'var(--c-ai-bright)' : 'var(--c-warn-bright)'}
+                border={scope === 'session' ? 'rgba(123,154,208,.4)' : 'rgba(194,91,114,.4)'}
+              >
+                {scope === 'session' ? 'This session only' : 'Stored on this device'}
+              </Badge>
+              <span className="mono" style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-muted)' }}>
+                {savedKey}
+              </span>
+              <span className="grow" />
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() =>
+                  confirm({
+                    title: 'Remove the API key?',
+                    body: 'The coach will stop working until you add a key again. Nothing else in Life OS is affected.',
+                    actionLabel: 'Remove key',
+                    danger: true,
+                    onConfirm: () => {
+                      clearApiKey();
+                      setSavedKey(null);
+                      setScope(null);
+                      toast.show('API key removed', { tone: 'muted' });
+                    },
+                  })
                 }
-              }}
+              >
+                Remove
+              </Button>
+            </div>
+            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-text-ghost)', margin: 0, lineHeight: 1.6 }}>
+              {scope === 'session'
+                ? 'The key is cleared when you close this tab. You will re-enter it next time — that is the safer default.'
+                : 'The key persists across restarts. It stays readable on disk until you remove it.'}
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="row" style={{ gap: 9, alignItems: 'flex-end', marginBottom: 12 }}>
+              <div className="grow">
+                <TextField
+                  label="API key"
+                  type="password"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder="gsk_…"
+                  hint="Free at console.groq.com — no card required."
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <Button
+                variant="primary"
+                disabled={!keyInput.trim()}
+                onClick={() => {
+                  try {
+                    setApiKey(keyInput, remember ? 'device' : 'session');
+                    setSavedKey(maskedKey());
+                    setScope(getKeyScope());
+                    setKeyInput('');
+                    toast.show(
+                      remember ? 'API key saved on this device' : 'API key saved for this session',
+                      { tone: 'ok' },
+                    );
+                  } catch (err) {
+                    toast.showError(err instanceof AppError ? err.message : 'Could not save the key.');
+                  }
+                }}
+              >
+                Save key
+              </Button>
+            </div>
+
+            {/* Persistence is opt-in, with the tradeoff stated at the point of choice. */}
+            <label
+              className="row"
+              style={{ gap: 8, fontSize: 'var(--fs-md)', color: 'var(--c-text-muted)', cursor: 'pointer' }}
             >
-              Save key
-            </Button>
-          </div>
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
+              Remember on this device
+            </label>
+            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-text-ghost)', margin: '6px 0 0', lineHeight: 1.6 }}>
+              Off by default. Left off, the key is held for this tab only and is gone when you close
+              it — the shortest exposure a browser allows. Turning it on keeps the key on disk until
+              you remove it.
+            </p>
+          </>
         )}
       </Card>
 

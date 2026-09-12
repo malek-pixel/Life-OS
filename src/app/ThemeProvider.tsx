@@ -56,6 +56,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.dataset.highContrast = String(settings.highContrast);
     root.dataset.largeText = String(settings.largeText || settings.fontScale === 'L');
     root.dataset.compact = String(settings.compactRows);
+    root.dataset.ambientMotion = String(settings.ambientMotion);
     if (settings.fontScale === 'S') root.style.setProperty('--fs-base', '11.5px');
     else root.style.removeProperty('--fs-base');
   }, [
@@ -63,6 +64,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     settings.highContrast,
     settings.largeText,
     settings.compactRows,
+    settings.ambientMotion,
     settings.fontScale,
   ]);
 

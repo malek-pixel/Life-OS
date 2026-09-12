@@ -15,10 +15,8 @@ import { store } from '../data/store';
 import type {
   Goal,
   Habit,
-  HabitLog,
   JournalEntry,
   LifeArea,
-  Milestone,
   Note,
   Project,
   Quest,
@@ -1265,4 +1263,3 @@ export function selectCalendarItems(fromMs: number, toMs: number): CalendarItem[
   return items.sort((a, b) => a.start - b.start);
 }
 
-export type { Habit, HabitLog, Milestone, Task };

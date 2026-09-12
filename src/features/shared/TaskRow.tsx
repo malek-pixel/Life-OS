@@ -17,6 +17,8 @@ import { Icon } from '../../ui/Icon';
 import { useToast } from '../../ui/overlays';
 import { completeTask, uncompleteTask } from '../../data/actions';
 import { formatDue } from '../../domain/dates';
+import { achievementName } from '../../domain/achievements';
+import { achievementAlertsEnabled } from '../../domain/nudges';
 import type { TaskView } from '../../domain/selectors';
 
 export function TaskRow({
@@ -55,8 +57,8 @@ export function TaskRow({
             tone: 'xp',
           });
         }
-        for (const id of result.unlockedAchievements) {
-          toast.show(`Achievement unlocked · ${id.replace(/-/g, ' ')}`, { tone: 'xp' });
+        if (achievementAlertsEnabled()) for (const id of result.unlockedAchievements) {
+          toast.show(`Achievement unlocked · ${achievementName(id)}`, { tone: 'xp' });
         }
       }
     } catch (err) {

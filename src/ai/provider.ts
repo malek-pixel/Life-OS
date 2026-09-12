@@ -5,12 +5,39 @@
  * provider, because it is cheap and means swapping models or adding a fallback
  * never touches the tool or UI layers.
  *
- * The API key: the Flutter spec stores it in flutter_secure_storage. A browser
- * has no equivalent — there is no OS keychain a web page can reach. It is kept
- * in localStorage on the user's own device, never sent anywhere except Groq,
- * and never written to a log (see errors.ts `redact`). Settings states this
- * limitation plainly rather than implying a security guarantee the platform
- * cannot make.
+ * ---------------------------------------------------------------------------
+ * API KEY STORAGE - READ THIS BEFORE CHANGING IT
+ * ---------------------------------------------------------------------------
+ *
+ * The Flutter spec stores the key in flutter_secure_storage, which is backed by
+ * the OS credential store. A browser has no equivalent. There is no secure
+ * storage available to a web page, and nothing in this file should ever be
+ * described as secure.
+ *
+ * What web storage actually gives you:
+ *   - Any script running on this origin can read it. That includes anything a
+ *     future dependency pulls in.
+ *   - A browser extension with host access can read it.
+ *   - Anyone with access to this browser profile on disk can read it.
+ *   - It is NOT encrypted at rest.
+ *
+ * Given those constraints, the safest available architecture is chosen here:
+ *
+ *   1. SESSION SCOPE BY DEFAULT. The key lives in sessionStorage, which is
+ *      wiped when the tab closes and is not shared with other tabs. This
+ *      meaningfully shrinks the window in which the key exists on disk.
+ *   2. PERSISTENCE IS OPT-IN. Storing it across restarts uses localStorage and
+ *      requires an explicit choice, made with the tradeoff stated in Settings.
+ *   3. NEVER LOGGED. errors.ts `redact()` strips key-shaped tokens from every
+ *      log line.
+ *   4. NEVER EXPORTED. data/portability.ts deliberately omits it, so a backup
+ *      file shared or synced to a cloud drive cannot leak the credential.
+ *   5. NEVER IN THE BUNDLE. It is entered at runtime, never an env var - a
+ *      VITE_ prefixed value would be inlined into the build and be public.
+ *
+ * The only genuinely secure option is a server holding the key, which this
+ * architecture deliberately does not have. That tradeoff is documented in
+ * docs/DECISIONS.md rather than papered over.
  */
 
 import { AiError } from '../data/errors';
@@ -58,27 +85,58 @@ export interface AiProvider {
  * Key management
  * ------------------------------------------------------------------ */
 
+export type KeyScope = 'session' | 'device';
+
+/**
+ * Reads the key, preferring the session copy.
+ *
+ * Checking session first means that after the user downgrades from persistent
+ * to session-only storage, the stale persisted copy can never win.
+ */
 export function getApiKey(): string | null {
   try {
-    return localStorage.getItem(KEY_STORAGE);
+    return sessionStorage.getItem(KEY_STORAGE) ?? localStorage.getItem(KEY_STORAGE);
   } catch {
-    // Private browsing or blocked site data.
+    // Private browsing, or site data blocked entirely.
     return null;
   }
 }
 
-export function setApiKey(key: string): void {
+/** Where the current key is held, or null when there is none. */
+export function getKeyScope(): KeyScope | null {
   try {
-    const trimmed = key.trim();
-    if (trimmed) localStorage.setItem(KEY_STORAGE, trimmed);
-    else localStorage.removeItem(KEY_STORAGE);
+    if (sessionStorage.getItem(KEY_STORAGE)) return 'session';
+    if (localStorage.getItem(KEY_STORAGE)) return 'device';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stores the key at the requested scope.
+ *
+ * `session` is the default and is wiped when the tab closes. `device` persists
+ * and is only ever chosen explicitly by the user. Writing to one scope always
+ * clears the other, so exactly one copy exists.
+ */
+export function setApiKey(key: string, scope: KeyScope = 'session'): void {
+  const trimmed = key.trim();
+  try {
+    sessionStorage.removeItem(KEY_STORAGE);
+    localStorage.removeItem(KEY_STORAGE);
+    if (!trimmed) return;
+    if (scope === 'device') localStorage.setItem(KEY_STORAGE, trimmed);
+    else sessionStorage.setItem(KEY_STORAGE, trimmed);
   } catch {
     throw new AiError('AI_NO_KEY', 'This browser will not let Life OS store the API key.');
   }
 }
 
+/** Removes the key from both scopes. */
 export function clearApiKey(): void {
   try {
+    sessionStorage.removeItem(KEY_STORAGE);
     localStorage.removeItem(KEY_STORAGE);
   } catch {
     /* nothing to clear */

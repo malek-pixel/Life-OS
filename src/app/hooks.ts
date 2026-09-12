@@ -78,13 +78,6 @@ export function useStoreStatus() {
  * Async action state
  * ------------------------------------------------------------------ */
 
-export interface AsyncState<T> {
-  run: (...args: never[]) => Promise<T | undefined>;
-  pending: boolean;
-  error: AppError | null;
-  reset: () => void;
-}
-
 /**
  * Wraps an action with pending and error state.
  *
@@ -152,25 +145,6 @@ export function useDebounced<T>(value: T, delay: number): T {
     return () => clearTimeout(id);
   }, [value, delay]);
   return debounced;
-}
-
-/** Whether the user has asked for reduced motion, from the OS or from Settings. */
-export function usePrefersReducedMotion(): boolean {
-  const settings = useSettings();
-  const [osPreference, setOsPreference] = useState(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return false;
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  });
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = (e: MediaQueryListEvent) => setOsPreference(e.matches);
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  }, []);
-
-  return osPreference || settings.reduceMotion;
 }
 
 /** Current viewport width bucket, for the responsive sidebar. */
