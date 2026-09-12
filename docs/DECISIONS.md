@@ -269,3 +269,88 @@ written by hand instead:
 - a colour library — three functions, used only for accent tints
 - a date library — the timezone strategy is the interesting part, and it is one
   documented module (`domain/dates.ts`)
+
+## 11. Motion system
+
+The app had a motion vocabulary from the design — an entrance, a stagger, a press
+curve — but durations and easings were written inline at roughly forty call
+sites, and `tokens.ts` exported a `motion` object that was almost entirely
+unused: only the two easing curves reached CSS. Timing could therefore drift per
+component, which is what makes an interface feel assembled rather than designed.
+
+**One scale, emitted as variables.** `motion` in `tokens.ts` is now the single
+source of rhythm and is emitted wholesale as `--m-*`. The bands are chosen by how
+much of the screen a change occupies — `micro` for a colour or icon, `fast` for
+one control, `standard` for a region, `emphasis` for a whole view — which is what
+keeps unrelated components feeling related. Exits run shorter than their
+entrances and accelerate, so a departing element never delays the user. No
+stylesheet writes a bare duration any more, including the two ambient loop
+periods and the tooltip delay.
+
+**Only transform and opacity are animated.** A live audit of every shipped CSS
+rule confirms it, with one deliberate exception: the sidebar animates `width` on
+collapse, because the content region genuinely has to reclaim the space. Two
+layout-animating transitions were removed — the row hover indent (`padding-left`,
+which reflowed the row and everything below it on every frame) and the toggle
+knob (`left`, now `translateX`). Progress bars express their value as `scaleX`
+rather than a width percentage, so one transition covers both the entrance and
+every later change.
+
+### Bugs found and fixed
+
+- **Skeletons were invisible.** `.los-skel` was referenced by the Skeleton
+  component and by the ambient-motion override, but no rule ever gave it a fill.
+  Every skeleton in the app — the boot screen, each route transition, the card
+  lists — rendered as an empty div, so loading looked like a blank page rather
+  than a pending one. This included the `ScreenSkeleton` added in §9.
+- **The mobile navigation drawer could never open.** The overlay sidebar is
+  mounted *by* the drawer opening, and its close-on-navigate effect fired on
+  mount, calling `onNavigate` and closing the drawer on the same tick. The
+  hamburger did nothing at any width below 820px. Only a real route change
+  dismisses it now.
+- **Statistics could display a number that was not the value.** The count-up
+  read its starting point out of an effect-cleanup closure, which holds whatever
+  the value was when that effect was created rather than what is on screen. A
+  retarget could then compute `from === target`, skip the animation, and leave
+  the tile stranded. The live value is held in a ref instead.
+- **Statistics depended on `requestAnimationFrame` to be correct.** rAF does not
+  run in a background tab, so a dashboard rendered while hidden kept its starting
+  zero — reporting 0 XP against a ledger that said 170. Both the count-up and the
+  progress bars now have a timeout that converges on the true value whether or
+  not a frame ever runs. The animation is the enhancement; arriving is not.
+- **A negative statistic counted the wrong way.** XP for a day goes negative once
+  an undo has appended its compensating event. The sign was treated as a fixed
+  prefix and the magnitude rolled up from zero, rendering "-0" on the first frame.
+- The scrim used the *fade-up* keyframe, translating the entire fixed overlay —
+  backdrop and dialog together — instead of simply darkening the page. The
+  detail drawer reused the *toast* keyframe, a 16px nudge, for a 480px panel
+  anchored to the window edge. Toasts had no exit at all and were torn out of the
+  DOM mid-life. The navigation drawer and its backdrop had no motion whatsoever.
+
+### Added
+
+Only where something was missing or dishonest, per master prompt §14:
+
+- **A sliding tab indicator.** The selected pill teleported between tabs; it now
+  travels, measured in a layout effect so it is correct on first paint.
+- **Navigation hover.** The sidebar rail had no hover response at all.
+- **A real tooltip for the collapsed rail,** replacing the native `title` — which
+  cannot be styled and waits about a second. It is positioned fixed and portalled
+  to the body because the rail scrolls: a CSS-only tooltip is clipped by that
+  `overflow: auto` and never appears, which would have been a decorative control
+  that does nothing. The accessible name is a visually-hidden label, not the
+  tooltip, because hover text names nothing to a screen reader.
+
+### Removed
+
+Four dead keyframes (`losBlink`, `losAmbient`, `losRing`, and `losBarGrow` once
+bars became transform-driven), and the `.los-bar-fill` class. The stagger was
+capped at six steps: beyond that the delays compounded far enough that the last
+card visibly lagged.
+
+### Reduced motion
+
+CSS collapses every duration from both the OS setting and the in-app one. That
+reaches nothing JS-driven, so `usePrefersReducedMotion` watches the media query
+*and* the `data-reduce-motion` attribute, and the count-up returns its target
+immediately rather than animating. Verified in the browser both ways.

@@ -282,3 +282,176 @@ export function useFieldId(prefix: string): string {
   if (!ref.current) ref.current = `${prefix}-${++idCounter}`;
   return ref.current;
 }
+
+/* ================================================================== *
+ * Motion
+ * ================================================================== */
+
+/**
+ * Whether the user has asked for reduced motion.
+ *
+ * The CSS honours this on its own by collapsing every duration, but a JS-driven
+ * animation - a count-up, a staged reveal - has nothing to collapse and must
+ * ask. Both sources count: the OS media query and the in-app Accessibility
+ * setting, which writes `data-reduce-motion` onto <html>. A user on a desktop
+ * browser may want it here without changing their whole operating system.
+ */
+export function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(readReducedMotion);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setReduced(readReducedMotion());
+
+    query.addEventListener('change', sync);
+    // The in-app setting is an attribute, not a media query, so it needs an
+    // observer rather than a listener.
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-reduce-motion'],
+    });
+
+    return () => {
+      query.removeEventListener('change', sync);
+      observer.disconnect();
+    };
+  }, []);
+
+  return reduced;
+}
+
+function readReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (document.documentElement.dataset.reduceMotion === 'true') return true;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * Rolls a number toward `target`, for dashboard statistics.
+ *
+ * Deliberately narrow. It animates on mount and when the value actually
+ * changes, and does nothing on an unrelated re-render, because a number that
+ * re-counts every time its parent renders is noise rather than feedback
+ * (section 26). Reduced motion returns the target immediately.
+ *
+ * Uses one rAF loop that stops the moment it arrives - there is no idle
+ * animation running behind the dashboard.
+ *
+ * The live value is held in a ref and mirrored into state for rendering. That
+ * matters for correctness, not just tidiness: reading the current value out of
+ * a render closure inside the effect cleanup gives whatever it was when that
+ * effect was created, not what is on screen now. With a stale starting point a
+ * retarget could compute `from === target`, skip the animation entirely, and
+ * leave the tile displaying a number that is not the real one. A statistic
+ * that lies is a worse failure than one that does not animate, so the value
+ * always converges on the target even if a frame is missed.
+ */
+export function useCountUp(target: number, durationMs: number): number {
+  const reduced = usePrefersReducedMotion();
+  const settled = !Number.isFinite(target) || reduced ? target : 0;
+  const [shown, setShown] = useState(settled);
+  /** What is actually on screen this instant. Never read from a closure. */
+  const currentRef = useRef(settled);
+
+  useEffect(() => {
+    if (reduced || !Number.isFinite(target)) {
+      currentRef.current = target;
+      setShown(target);
+      return;
+    }
+
+    const from = currentRef.current;
+    if (from === target) {
+      // Already there. Still assert it, so a dropped frame cannot strand the
+      // display one step short of the value it is meant to show.
+      setShown(target);
+      return;
+    }
+
+    let frame = 0;
+    const started = performance.now();
+
+    const arrive = () => {
+      currentRef.current = target;
+      setShown(target);
+    };
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - started) / durationMs);
+      // Ease-out: fast to begin with, settling at the end, so the final digits
+      // are legible rather than blurring past.
+      const eased = 1 - Math.pow(1 - t, 3);
+      if (t < 1) {
+        const next = from + (target - from) * eased;
+        currentRef.current = next;
+        setShown(next);
+        frame = requestAnimationFrame(step);
+      } else {
+        arrive();
+      }
+    };
+
+    frame = requestAnimationFrame(step);
+
+    /*
+     * Safety net, and the reason this hook is more than a rAF loop.
+     *
+     * requestAnimationFrame does not run in a background tab, and is throttled
+     * hard in several other situations. Without this the displayed number is
+     * whatever the last frame left behind - on a tab that was never foregrounded,
+     * the starting zero - so the dashboard would quietly report 0 XP while the
+     * ledger said otherwise. setTimeout still fires when frames do not, so the
+     * value always arrives even if the animation never got to run.
+     */
+    const settleTimer = window.setTimeout(arrive, durationMs + 250);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(settleTimer);
+    };
+  }, [target, durationMs, reduced]);
+
+  return shown;
+}
+
+/**
+ * Eases a 0-100 value from zero on mount and between values on change.
+ *
+ * The shared mechanism behind every progress bar in the app - the component
+ * library's ProgressBar and the analytics chart rows - so a bar advances the
+ * same way wherever it appears rather than each one animating its own way.
+ *
+ * Returns the value to render; the easing itself is a CSS transition on the
+ * element, which is what keeps it off the main thread. Reduced motion skips
+ * straight to the target, so nothing ever has to catch up.
+ */
+export function useAnimatedValue(target: number, animate = true): number {
+  const reduced = usePrefersReducedMotion();
+  const [shown, setShown] = useState(animate && !reduced ? 0 : target);
+
+  useEffect(() => {
+    if (!animate || reduced) {
+      setShown(target);
+      return;
+    }
+    // Next frame, so the browser paints the starting state and has something to
+    // interpolate from. Setting it synchronously would coalesce into one paint
+    // and the bar would simply appear at its final width.
+    const frame = requestAnimationFrame(() => setShown(target));
+    /*
+     * And a fallback, because rAF does not run in a background tab. Without it
+     * a bar rendered while the tab was hidden would stay at zero after the user
+     * came back - reporting no progress on work that is actually done. The
+     * animation is the enhancement; arriving at the right value is not.
+     */
+    const settleTimer = window.setTimeout(() => setShown(target), 250);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(settleTimer);
+    };
+  }, [target, animate, reduced]);
+
+  return shown;
+}

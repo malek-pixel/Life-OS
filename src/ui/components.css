@@ -115,7 +115,7 @@
   border-radius: 50%;
   border: 1.5px solid currentColor;
   border-top-color: transparent;
-  animation: losSpin 0.7s linear infinite;
+  animation: losSpin var(--m-spin) linear infinite;
   flex: none;
 }
 
@@ -262,7 +262,7 @@
   color: var(--c-text);
   font-size: var(--fs-md);
   font-family: var(--font-ui);
-  transition: border-color 0.16s ease, background-color 0.16s ease;
+  transition: border-color var(--m-fast) ease, background-color var(--m-fast) ease;
 }
 .input::placeholder,
 .textarea::placeholder {
@@ -323,7 +323,7 @@
   border: 1.5px solid var(--c-border-input);
   color: transparent;
   padding: 0;
-  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.14s var(--ease-press);
+  transition: background-color var(--m-fast) ease, border-color var(--m-fast) ease, transform var(--m-micro) var(--ease-press);
 }
 .checkbox:hover:not(:disabled) {
   border-color: var(--c-accent-text);
@@ -352,7 +352,7 @@
   border: none;
   padding: 0;
   background: var(--c-fill);
-  transition: background-color 0.2s ease;
+  transition: background-color var(--m-fast) ease;
 }
 .toggle-on {
   background: rgba(158, 48, 74, 0.6);
@@ -365,10 +365,15 @@
   height: 16px;
   border-radius: 50%;
   background: #8a8b95;
-  transition: left 0.18s var(--ease-press), background-color 0.18s ease;
+  transition: transform var(--m-fast) var(--ease-press), background-color var(--m-fast) ease;
 }
+/*
+ * The knob travels by transform, not by `left`. Animating `left` relayouts the
+ * switch on every frame; translateX is composited. The distance is the track
+ * width less the knob and both insets: 38 - 16 - 2.5 - 2.5 = 17px.
+ */
 .toggle-on .toggle-knob {
-  left: 19.5px;
+  transform: translateX(17px);
   background: var(--c-text);
 }
 .toggle:disabled {
@@ -399,10 +404,40 @@
 }
 .tab:hover:not(.tab-on) {
   color: var(--c-text-muted);
+  background: var(--c-fill-subtle);
 }
+/*
+ * The selected pill slides between tabs rather than disappearing here and
+ * reappearing there, so the control reads as one moving indicator. It is a
+ * single absolutely-positioned element behind the labels, driven by a
+ * translate/scale the component measures - see Tabs in primitives.tsx.
+ */
 .tab-on {
-  background: var(--c-fill-active);
   color: var(--c-text);
+}
+.tabs {
+  position: relative;
+}
+.tab-indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 1px;
+  border-radius: var(--r-md);
+  background: var(--c-fill-active);
+  transform-origin: left center;
+  pointer-events: none;
+  transition: transform var(--m-standard) var(--ease);
+}
+/* Before the first measurement there is nothing to point at. */
+.tab-indicator[data-ready='false'] {
+  opacity: 0;
+  transition: none;
+}
+.tab {
+  position: relative;
+  z-index: 1;
 }
 
 /* ================================================================== *
@@ -449,11 +484,18 @@
 .bar-lg {
   height: 8px;
 }
+/*
+ * Full width, scaled to the value. See ProgressBar in primitives.tsx for why
+ * this is a transform rather than a width percentage.
+ */
 .bar-fill {
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: 0;
   border-radius: var(--r-xs);
   background: var(--c-accent);
+  transform-origin: left center;
+  transition: transform var(--m-bar) var(--ease);
+  will-change: transform;
 }
 /* The XP bar's scanning highlight, from the design's sidebar. */
 .bar-scan {
@@ -463,7 +505,7 @@
   left: 0;
   width: 40%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-  animation: losScan 2.6s linear infinite;
+  animation: losScan var(--m-scan) linear infinite;
   pointer-events: none;
 }
 
@@ -547,7 +589,12 @@
   background: var(--c-scrim);
   backdrop-filter: blur(2px);
   display: flex;
-  animation: losFadeUp 0.16s ease both;
+  /*
+   * Fade only. This used to use losFadeUp, which translated the entire fixed
+   * overlay - backdrop and dialog together - upward, so the scrim visibly slid
+   * over the page edge instead of simply darkening what is behind it.
+   */
+  animation: losFadeIn var(--m-fast) ease both;
 }
 .scrim-center {
   align-items: center;
@@ -574,7 +621,7 @@
   max-height: 86vh;
   display: flex;
   flex-direction: column;
-  animation: losPop 0.2s var(--ease) both;
+  animation: losModalIn var(--m-standard) var(--ease) both;
 }
 .modal-wide {
   max-width: 720px;
@@ -587,7 +634,11 @@
   max-width: 100vw;
   display: flex;
   flex-direction: column;
-  animation: losToastIn 0.22s var(--ease) both;
+  /*
+    * Was reusing losToastIn - a 16px nudge built for a small corner toast - for
+    * a 480px panel anchored to the window edge. It now travels its own width.
+    */
+  animation: losDrawerIn var(--m-standard) var(--ease) both;
 }
 
 .overlay-header {
@@ -645,7 +696,7 @@
   border-radius: var(--r-2xl);
   padding: 12px 14px;
   box-shadow: var(--sh-card);
-  animation: losToastIn 0.24s var(--ease) both;
+  animation: losToastIn var(--m-standard) var(--ease) both;
   pointer-events: auto;
   font-size: var(--fs-md);
   line-height: 1.45;
@@ -779,4 +830,62 @@
 }
 .table tr:last-child td {
   border-bottom: none;
+}
+
+/*
+ * Toast exit.
+ *
+ * Runs shorter than the entrance and accelerates away: an arriving toast is
+ * asking to be read, a leaving one should get out of the way. `forwards` holds
+ * the final frame so it cannot flash back to full opacity before the node is
+ * removed. Pointer events go first, so a toast on its way out cannot swallow a
+ * click meant for the one behind it.
+ */
+.toast-leaving {
+  animation: losToastOut var(--m-exit) var(--m-ease-in) forwards;
+  pointer-events: none;
+}
+
+/*
+ * Sidebar navigation.
+ *
+ * Hover had no visual response at all, so the rail felt inert next to every
+ * other control in the app. The active item is left alone here: its accent
+ * wash is set inline by the NavLink and must not be overridden by a hover.
+ */
+.los-nav:hover {
+  background: var(--c-fill-hover) !important;
+  color: var(--c-text) !important;
+}
+.los-nav[aria-current='page']:hover {
+  background: var(--c-accent-wash) !important;
+}
+
+/*
+ * Collapse and expand.
+ *
+ * Width is a layout property and animating it relayouts the content region on
+ * every frame. It is used anyway, deliberately: the main column has to reclaim
+ * the space, and there is exactly one sidebar being animated for 280ms on an
+ * explicit user action. The labels cross-fade slightly faster than the rail
+ * moves so text is gone before the rail is narrow enough to clip it.
+ */
+.los-sidebar {
+  transition: width var(--m-standard) var(--ease);
+}
+.los-sidebar .truncate {
+  transition: opacity var(--m-fast) ease;
+}
+
+/*
+ * The narrow-window navigation drawer slides in from the left edge it is
+ * anchored to, matching the right-anchored detail drawer's behaviour. Without
+ * this it simply appeared, which made the backdrop fade look like a bug.
+ */
+.los-sidebar-overlay {
+  animation: losNavDrawerIn var(--m-standard) var(--ease) both;
+}
+@keyframes losNavDrawerIn {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(0); }
 }

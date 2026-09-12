@@ -13,6 +13,10 @@
 
 import {
   forwardRef,
+
+  useLayoutEffect,
+  useRef,
+  useState,
   type ButtonHTMLAttributes,
   type CSSProperties,
   type InputHTMLAttributes,
@@ -22,7 +26,9 @@ import {
 } from 'react';
 
 import { Icon, type IconName } from './Icon';
-import { useFieldId } from '../app/hooks';
+import { formatStatValue, parseStatValue } from './statValue';
+import { motion } from '../design/tokens';
+import { useAnimatedValue, useCountUp, useFieldId } from '../app/hooks';
 
 /* ================================================================== *
  * Button
@@ -352,8 +358,49 @@ export function Tabs<T extends string>({
     if (next) onChange(next.value);
   };
 
+  const listRef = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState<{ x: number; w: number } | null>(null);
+
+  /*
+   * Measure the selected tab and park the indicator over it.
+   *
+   * Layout-effect rather than effect so the indicator is already in place on
+   * first paint — measuring after paint would show it at x=0 for a frame and
+   * then slide, which reads as a glitch rather than a transition.
+   *
+   * Re-measures when the option set or the label text changes (both change the
+   * geometry) and on container resize, so the pill cannot drift away from the
+   * tab it is meant to be marking.
+   */
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+
+    const measure = () => {
+      const active = list.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!active) return;
+      setIndicator({ x: active.offsetLeft, w: active.offsetWidth });
+    };
+    measure();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [value, options]);
+
   return (
-    <div className="tabs" role="tablist" aria-label={label}>
+    <div className="tabs" role="tablist" aria-label={label} ref={listRef}>
+      <span
+        className="tab-indicator"
+        data-ready={indicator ? 'true' : 'false'}
+        aria-hidden="true"
+        style={
+          indicator
+            ? { transform: `translateX(${indicator.x}px) scaleX(${indicator.w})` }
+            : undefined
+        }
+      />
       {options.map((option) => (
         <button
           key={option.value}
@@ -453,6 +500,22 @@ export function ProgressBar({
   scan?: boolean;
 }) {
   const value = Math.max(0, Math.min(100, Math.round(percent)));
+
+  /*
+   * The fill is full-width and scaled, rather than sized by a width percentage.
+   *
+   * Two reasons. Transform is composited, so the bar cannot cause a reflow on
+   * any frame. And because one property expresses the value, the *same*
+   * transition covers both the entrance (0 to the current value on mount) and
+   * every later change (old value to new), which is what section 20 asks for:
+   * progress that visibly advances instead of teleporting.
+   *
+   * Starting at 0 and setting the real value in an effect is what gives the
+   * mount case something to animate from. `animate={false}` skips that, for
+   * places that render many bars at once and should simply show their value.
+   */
+  const shown = useAnimatedValue(value, animate);
+
   return (
     <div
       className={cx('bar', large && 'bar-lg')}
@@ -463,8 +526,8 @@ export function ProgressBar({
       aria-label={label}
     >
       <div
-        className={cx('bar-fill', animate && 'los-bar-fill')}
-        style={{ width: `${value}%`, background: color }}
+        className="bar-fill"
+        style={{ transform: `scaleX(${shown / 100})`, background: color }}
       />
       {scan && value > 0 ? <span className="bar-scan" /> : null}
     </div>
@@ -642,6 +705,28 @@ export function PageHeader({
   );
 }
 
+/**
+ * Animates the numeric part of a formatted statistic.
+ *
+ * Takes the already-formatted string the screens pass today ("1,240", "86%",
+ * "3d", "--") rather than a number, so every existing call site keeps working
+ * and no screen has to hand over its formatting. The leading number is rolled
+ * up and the prefix and suffix are held fixed; anything with no number in it,
+ * such as an em dash placeholder, renders unchanged and never animates.
+ *
+ * Thousands separators are re-applied only if the source had them, so "2024"
+ * does not become "2,024".
+ */
+function CountUp({ value }: { value: string }) {
+  const parts = parseStatValue(value);
+  const shown = useCountUp(parts.target, motion.countUpMs);
+
+  // No number in it - an em dash placeholder, say. Render it untouched.
+  if (!Number.isFinite(parts.target)) return <>{value}</>;
+
+  return <>{formatStatValue(parts, shown)}</>;
+}
+
 /** Small stat tile, as used on the dashboard and fitness headers. */
 export function StatTile({
   label,
@@ -660,11 +745,22 @@ export function StatTile({
         {label}
       </p>
       <div className="row" style={{ gap: 8, alignItems: 'baseline' }}>
+        {/*
+          * Monospace and tabular figures: a proportional font changes width as
+          * the digits roll, which would make the tile jitter for the whole
+          * animation and shift anything beside it.
+          */}
         <span
           className="los-count"
-          style={{ fontSize: 'var(--fs-6xl)', fontWeight: 700, fontFamily: 'var(--font-mono)', lineHeight: 1 }}
+          style={{
+            fontSize: 'var(--fs-6xl)',
+            fontWeight: 700,
+            fontFamily: 'var(--font-mono)',
+            fontVariantNumeric: 'tabular-nums',
+            lineHeight: 1,
+          }}
         >
-          {value}
+          <CountUp value={value} />
         </span>
         {delta ? (
           <span

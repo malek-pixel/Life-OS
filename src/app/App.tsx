@@ -159,9 +159,15 @@ function Shell() {
       {narrow ? (
         drawerOpen ? (
           <>
+            {/*
+              * Shares the overlay scrim class so the navigation drawer dims the
+              * page exactly the way every modal and detail panel does, instead
+              * of appearing instantly with no backdrop transition.
+              */}
             <div
               onClick={() => setDrawerOpen(false)}
-              style={{ position: 'fixed', inset: 0, background: 'var(--c-scrim)', zIndex: 39 }}
+              className="scrim"
+              style={{ zIndex: 39 }}
             />
             <Sidebar
               collapsed={false}

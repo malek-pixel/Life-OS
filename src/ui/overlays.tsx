@@ -26,6 +26,7 @@ import { createPortal } from 'react-dom';
 import { Button, IconButton, cx } from './primitives';
 import { Icon, type IconName } from './Icon';
 import { useFieldId, useFocusTrap } from '../app/hooks';
+import { motion, motionMs } from '../design/tokens';
 
 /* ================================================================== *
  * Shared shell
@@ -268,6 +269,8 @@ export interface Toast {
   action?: { label: string; run: () => void };
   /** Milliseconds before auto-dismissal. Errors stay until dismissed. */
   duration?: number;
+  /** Set while the exit animation runs, just before removal. */
+  leaving?: boolean;
 }
 
 interface ToastApi {
@@ -278,20 +281,40 @@ interface ToastApi {
 
 const ToastContext = createContext<ToastApi | null>(null);
 
-/** Toast lifetime, matching the design's `showToast`. */
-const DEFAULT_TOAST_MS = 3400;
+/** Toast lifetime. Single source: the motion scale, not a second copy here. */
+const DEFAULT_TOAST_MS = motion.toastMs;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const timers = useRef(new Map<string, number>());
 
+  /*
+   * Dismissal is two-stage: the toast is marked `leaving` so it can play its
+   * exit, then removed once that has run. Without this the node is torn out of
+   * the DOM mid-animation and the toast simply vanishes, which reads as a
+   * glitch rather than a dismissal.
+   *
+   * The removal timer is tracked in the same map as the auto-dismiss timer, so
+   * unmounting mid-exit cannot leave a stray timeout behind.
+   */
   const dismiss = useCallback((id: string) => {
-    setToasts((current) => current.filter((t) => t.id !== id));
-    const timer = timers.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
+    const existing = timers.current.get(id);
+    if (existing) {
+      clearTimeout(existing);
       timers.current.delete(id);
     }
+
+    setToasts((current) => {
+      // Already leaving: let the running exit finish rather than restarting it.
+      if (current.some((t) => t.id === id && t.leaving)) return current;
+      return current.map((t) => (t.id === id ? { ...t, leaving: true } : t));
+    });
+
+    const removal = window.setTimeout(() => {
+      setToasts((current) => current.filter((t) => t.id !== id));
+      timers.current.delete(id);
+    }, motionMs.exit);
+    timers.current.set(id, removal);
   }, []);
 
   const show = useCallback<ToastApi['show']>(
@@ -359,7 +382,12 @@ function ToastStack({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: st
         return (
           <div
             key={toast.id}
-            className={cx('toast', toast.tone === 'xp' && 'toast-xp', toast.tone === 'error' && 'toast-error')}
+            className={cx(
+              'toast',
+              toast.tone === 'xp' && 'toast-xp',
+              toast.tone === 'error' && 'toast-error',
+              toast.leaving && 'toast-leaving',
+            )}
           >
             <Icon name={icon} size={15} color={color} style={{ marginTop: 1 }} />
             <span className="grow">{toast.text}</span>

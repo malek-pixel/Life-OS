@@ -114,86 +114,121 @@ select {
   background: transparent;
 }
 
-/* ---------- keyframes (verbatim from the design) ---------- */
+/* ================================================================== *
+ * Motion
+ *
+ * Every duration and curve below resolves to a variable from tokens.ts.
+ * Nothing here writes a bare number: the scale is the single source of
+ * rhythm for the whole product (--m-micro / --m-fast / --m-standard /
+ * --m-emphasis), and the travel distances come from it too.
+ *
+ * Three rules the rest of the app inherits:
+ *   1. Only transform and opacity are animated. Layout properties (width,
+ *      height, padding, top/left) are never transitioned — they force reflow
+ *      on every frame and are the usual source of jank.
+ *   2. Entrances decelerate (--ease), exits accelerate (--m-ease-in) and run
+ *      shorter, so a leaving element never delays the user.
+ *   3. Motion that carries no information is decorative, and decorative motion
+ *      is switchable (see the ambient-motion block below).
+ * ================================================================== */
+
+/* ---------- keyframes ---------- */
+
+/* Decorative: the XP bar's scanning highlight. */
 @keyframes losScan {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
 }
-@keyframes losBlink {
-  0%, 60% { opacity: 1; }
-  61%, 100% { opacity: 0.25; }
+/* Decorative: skeleton shimmer, so loading reads as pending rather than broken. */
+@keyframes losShimmer {
+  0% { background-position: -420px 0; }
+  100% { background-position: 420px 0; }
 }
+/* Small confirmation pop — dots, badges, checkmarks. The one overshoot. */
 @keyframes losPop {
-  0% { transform: scale(0.85); opacity: 0; }
+  0% { transform: scale(0.9); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
+/* The standard entrance: content rises a short distance and settles. */
 @keyframes losFadeUp {
-  0% { opacity: 0; transform: translateY(14px); }
+  0% { opacity: 0; transform: translateY(var(--m-rise)); }
   100% { opacity: 1; transform: translateY(0); }
 }
-@keyframes losBarGrow {
-  0% { transform: scaleX(0); }
-  100% { transform: scaleX(1); }
+@keyframes losFadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
 }
 @keyframes losBarUp {
   0% { transform: scaleY(0); }
   100% { transform: scaleY(1); }
 }
 @keyframes losCountPop {
-  0% { opacity: 0; transform: translateY(6px) scale(0.96); }
+  0% { opacity: 0; transform: translateY(var(--m-rise-sm)); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+/*
+ * Overlay entrances. A modal scales up very slightly from its resting size —
+ * enough to read as arriving, not enough to look like it is zooming — while a
+ * drawer and a toast travel in from the edge they are anchored to.
+ */
+@keyframes losModalIn {
+  0% { opacity: 0; transform: translateY(var(--m-rise-sm)) scale(var(--m-enter-scale)); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-@keyframes losShimmer {
-  0% { background-position: -460px 0; }
-  100% { background-position: 460px 0; }
+@keyframes losDrawerIn {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(0); }
 }
 @keyframes losToastIn {
-  0% { opacity: 0; transform: translateX(22px) scale(0.97); }
+  0% { opacity: 0; transform: translateX(var(--m-slide)) scale(var(--m-enter-scale)); }
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
-@keyframes losAmbient {
-  0% { transform: translate(0, 0); }
-  50% { transform: translate(2%, 2%); }
-  100% { transform: translate(0, 0); }
+@keyframes losToastOut {
+  0% { opacity: 1; transform: translateX(0) scale(1); }
+  100% { opacity: 0; transform: translateX(var(--m-slide)) scale(var(--m-enter-scale)); }
 }
-@keyframes losRing {
-  0% { transform: scale(0.9); opacity: 0.7; }
-  70% { transform: scale(1.25); opacity: 0; }
-  100% { opacity: 0; }
+/* Tooltip: appears from the side it points away from. */
+@keyframes losTipIn {
+  0% { opacity: 0; transform: translateX(-6px); }
+  100% { opacity: 1; transform: translateX(0); }
 }
 @keyframes losSpin {
   to { transform: rotate(360deg); }
 }
 
-/* ---------- motion system: entrance + stagger ---------- */
-.los-screen {
-  animation: losFadeUp 0.42s var(--ease) both;
-}
-.los-stagger > * {
-  animation: losFadeUp 0.5s var(--ease) both;
-}
-.los-stagger > *:nth-child(1) { animation-delay: 0.02s; }
-.los-stagger > *:nth-child(2) { animation-delay: 0.07s; }
-.los-stagger > *:nth-child(3) { animation-delay: 0.12s; }
-.los-stagger > *:nth-child(4) { animation-delay: 0.17s; }
-.los-stagger > *:nth-child(5) { animation-delay: 0.22s; }
-.los-stagger > *:nth-child(6) { animation-delay: 0.27s; }
-.los-stagger > *:nth-child(7) { animation-delay: 0.32s; }
+/* ---------- entrance + stagger ---------- */
 
-.los-bar-fill {
-  animation: losBarGrow 0.9s var(--ease) both;
-  transform-origin: left;
+.los-screen {
+  animation: losFadeUp var(--m-emphasis) var(--ease) both;
 }
+
+/*
+ * Staggered section entrance. Capped at seven steps and 45ms apart: the point
+ * is to establish reading order, so the last card must not visibly lag. Beyond
+ * seven children everything shares the final delay rather than compounding,
+ * which is what stops a long list from animating for two seconds.
+ */
+.los-stagger > * {
+  animation: losFadeUp var(--m-emphasis) var(--ease) both;
+  animation-delay: calc(6 * var(--m-stagger-step));
+}
+.los-stagger > *:nth-child(1) { animation-delay: calc(0 * var(--m-stagger-step)); }
+.los-stagger > *:nth-child(2) { animation-delay: calc(1 * var(--m-stagger-step)); }
+.los-stagger > *:nth-child(3) { animation-delay: calc(2 * var(--m-stagger-step)); }
+.los-stagger > *:nth-child(4) { animation-delay: calc(3 * var(--m-stagger-step)); }
+.los-stagger > *:nth-child(5) { animation-delay: calc(4 * var(--m-stagger-step)); }
+.los-stagger > *:nth-child(6) { animation-delay: calc(5 * var(--m-stagger-step)); }
+
 .los-bar-up {
-  animation: losBarUp 0.7s var(--ease) both;
+  animation: losBarUp var(--m-bar) var(--ease) both;
   transform-origin: bottom;
 }
 .los-count {
   display: inline-block;
-  animation: losCountPop 0.5s var(--ease) both;
+  animation: losCountPop var(--m-standard) var(--ease) both;
 }
 .los-pop {
-  animation: losPop 0.28s var(--ease-press) both;
+  animation: losPop var(--m-fast) var(--ease-press) both;
 }
 
 /* ---------- shared interaction language ---------- */
@@ -204,41 +239,90 @@ select {
  */
 .los-press {
   transition:
-    transform 0.14s var(--ease-press),
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    color 0.15s ease,
-    filter 0.2s ease;
+    transform var(--m-micro) var(--ease-press),
+    background-color var(--m-fast) ease,
+    border-color var(--m-fast) ease,
+    box-shadow var(--m-fast) ease,
+    color var(--m-micro) ease,
+    opacity var(--m-fast) ease;
 }
-.los-press:active:not(:disabled) {
-  transform: scale(0.972);
+.los-press:active:not(:disabled):not([aria-disabled='true']) {
+  transform: scale(var(--m-press-scale));
 }
+/* A disabled control must not appear to respond to the pointer at all. */
 .los-press:disabled,
 .los-press[aria-disabled='true'] {
   opacity: 0.45;
   cursor: not-allowed;
+  transform: none;
 }
 
 .los-card-hover {
   transition:
-    transform 0.2s var(--ease),
-    border-color 0.2s ease,
-    box-shadow 0.25s ease;
+    transform var(--m-fast) var(--ease),
+    border-color var(--m-fast) ease,
+    box-shadow var(--m-standard) ease;
 }
 .los-card-hover:hover {
-  transform: translateY(-2px);
+  transform: translateY(var(--m-lift));
   border-color: var(--c-border-strong);
   box-shadow: var(--sh-card);
 }
+/* Pressing settles the card back toward the surface. */
+.los-card-hover:active {
+  transform: translateY(0);
+  transition-duration: var(--m-micro);
+}
 
+/*
+ * Row hover.
+ *
+ * Background only. This used to also animate padding-left, which reflows the
+ * row and everything below it on every frame of the transition - the one
+ * layout-animating property left in the app.
+ *
+ * It is not replaced with an accent marker: rows already carry a priority bar
+ * at that same left edge, and a second indicator in the same place would read
+ * as a state change rather than as hover.
+ */
 .los-row {
-  transition:
-    background-color 0.16s ease,
-    padding-left 0.16s ease;
+  transition: background-color var(--m-fast) ease;
 }
 .los-row:hover {
   background: var(--c-fill-subtle);
+}
+
+/*
+ * Tooltip for icon-only controls, chiefly the collapsed sidebar.
+ *
+ * Replaces the native `title` attribute, which cannot be styled, waits about a
+ * second, and is invisible to touch. The delay here is deliberate: it must not
+ * fire as the pointer crosses the rail on its way somewhere else.
+ */
+/*
+ * Tooltip bubble for the collapsed navigation rail.
+ *
+ * Fixed, and portalled to the body, because the rail scrolls: an absolutely
+ * positioned tooltip is clipped by that overflow and never appears. The
+ * position is measured on hover - see SidebarLink.
+ *
+ * The delay is deliberate. Without it, dragging the pointer across the rail on
+ * the way somewhere else fires a row of tooltips behind the cursor.
+ */
+.los-tip-bubble {
+  position: fixed;
+  z-index: 80;
+  transform: translateY(-50%);
+  padding: 5px 9px;
+  background: var(--c-bg-raised);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-card);
+  color: var(--c-text);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: losTipIn var(--m-fast) var(--ease) var(--m-tip-delay) both;
 }
 
 /* ---------- accessibility ---------- */
@@ -300,6 +384,47 @@ html[data-large-text='true'] {
 /* Compact rows setting - tightens list density. */
 html[data-compact='true'] {
   --sp-row-y: 7px;
+}
+
+/*
+ * Skeleton placeholder.
+ *
+ * This block previously did not exist: `.los-skel` was referenced by the
+ * Skeleton component and by the ambient-motion override below, but nothing
+ * ever gave it a size-independent fill. Every skeleton in the app — the boot
+ * screen, each route transition, the card lists — therefore rendered as an
+ * invisible div, so loading looked like a blank page rather than a pending one.
+ *
+ * The shimmer travels across a fixed 420px gradient band rather than a
+ * percentage, so blocks of different widths animate at the same apparent
+ * speed instead of the wide ones sweeping faster than the narrow ones.
+ */
+.los-skel {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.045) 0%,
+      rgba(255, 255, 255, 0.085) 50%,
+      rgba(255, 255, 255, 0.045) 100%
+    )
+    rgba(255, 255, 255, 0.05);
+  background-size: 420px 100%;
+  background-repeat: repeat-x;
+  animation: losShimmer var(--m-shimmer) linear infinite;
+}
+
+/*
+ * Skeleton to content.
+ *
+ * Real content fades in over the space the skeleton just vacated rather than
+ * the whole page flashing. The duration is short because the data is already
+ * there by this point — this is a handover, not a load.
+ */
+.los-settle {
+  animation: losFadeIn var(--m-standard) var(--ease) both;
 }
 
 /*

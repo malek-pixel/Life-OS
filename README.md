@@ -139,7 +139,7 @@ does not have — see [`docs/DECISIONS.md`](docs/DECISIONS.md) §6.
 npm test
 ```
 
-Three suites, 104 tests, covering what silently corrupts data if wrong:
+Four suites, 118 tests, covering what silently corrupts data if wrong:
 
 - **`test/domain.test.ts`** — the pure logic. Streak calculation including
   protections, custom schedules, weekly targets and the rule that an unlogged
@@ -150,6 +150,11 @@ Three suites, 104 tests, covering what silently corrupts data if wrong:
   asserted to actually gate its behaviour), quiet hours, and export/import:
   round-trip, persistence after restore, rejection leaving existing data intact,
   and a check that the API key never appears in an export.
+- **`test/motion.test.ts`** — the statistic formatting behind the animated
+  dashboard counters. A bug here does not look like a broken animation, it looks
+  like the dashboard reporting the wrong number: a negative value counting the
+  wrong way, a `+` silently dropped, `2024` gaining a thousands separator, or a
+  roll-up settling one step short of its target.
 - **`test/actions.test.ts`** — the action layer against a real IndexedDB
   (`fake-indexeddb`), covering the end-to-end flows: goal → project → task →
   complete → progress and XP propagate; habit → streak → XP; recurrence spawning
@@ -164,6 +169,25 @@ Three suites, 104 tests, covering what silently corrupts data if wrong:
 no environment configuration at all. The Groq key is entered in Settings, not
 baked into the build — anything prefixed `VITE_` is inlined into the bundle and
 is therefore public, so a credential must never go there.
+
+---
+
+## Motion
+
+One scale, defined in `src/design/tokens.ts` and emitted as `--m-*` custom
+properties. Nothing in the app writes a bare duration or easing curve, so the
+whole interface shares a rhythm and retuning it is one edit rather than forty.
+Bands are chosen by how much of the screen a change occupies — `micro` for a
+colour, `fast` for a control, `standard` for a region, `emphasis` for a view —
+and exits run shorter than their entrances so a departing element never delays
+you.
+
+Only `transform` and `opacity` are animated, with one deliberate exception (the
+sidebar's width on collapse, because the content region has to reclaim the
+space). Animation is always an enhancement: progress bars and dashboard counters
+converge on their true value whether or not a single frame ever runs, because a
+number that animates is worth less than a number that is right. See
+[`docs/DECISIONS.md`](docs/DECISIONS.md) §11.
 
 ---
 

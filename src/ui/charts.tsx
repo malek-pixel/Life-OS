@@ -15,6 +15,7 @@
 import type { ReactNode } from 'react';
 
 import { EmptyState } from './primitives';
+import { useAnimatedValue } from '../app/hooks';
 
 /* ================================================================== *
  * Vertical bars - the weekly activity chart
@@ -132,10 +133,7 @@ export function BarList({
             aria-label={`${row.label}: ${row.value == null ? 'not tracked' : `${row.value}%`}`}
           >
             {row.value != null ? (
-              <div
-                className="bar-fill los-bar-fill"
-                style={{ width: `${row.value}%`, background: row.color }}
-              />
+              <ChartBarFill value={row.value} color={row.color} />
             ) : null}
           </div>
           {row.meta ? (
@@ -171,7 +169,10 @@ export function Ring({
 }) {
   const radius = (size - thickness) / 2;
   const circumference = 2 * Math.PI * radius;
-  const dash = value == null ? 0 : (circumference * Math.max(0, Math.min(100, value))) / 100;
+  // Same shared easing as every bar, so the ring sweeps round on first paint
+  // and travels between values rather than snapping to a new arc.
+  const shown = useAnimatedValue(value ?? 0, value != null);
+  const dash = value == null ? 0 : (circumference * Math.max(0, Math.min(100, shown))) / 100;
 
   return (
     <figure style={{ margin: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
@@ -202,7 +203,7 @@ export function Ring({
               strokeWidth={thickness}
               strokeLinecap="round"
               strokeDasharray={`${dash} ${circumference}`}
-              style={{ transition: 'stroke-dasharray .9s var(--ease)' }}
+              style={{ transition: 'stroke-dasharray var(--m-bar) var(--ease)' }}
             />
           ) : null}
         </svg>
@@ -333,4 +334,21 @@ export function ChartFrame({
 }) {
   if (!hasData) return <EmptyState icon="analytics" title={emptyTitle} body={emptyBody} />;
   return <>{children}</>;
+}
+
+/**
+ * A horizontal bar row fill.
+ *
+ * Shares useAnimatedValue with the component library ProgressBar, so a chart
+ * bar grows exactly the way every other bar in the app does. Scaled rather
+ * than sized by a width percentage, for the reason given on ProgressBar.
+ */
+function ChartBarFill({ value, color }: { value: number; color: string }) {
+  const shown = useAnimatedValue(value);
+  return (
+    <div
+      className="bar-fill"
+      style={{ transform: `scaleX(${shown / 100})`, background: color }}
+    />
+  );
 }

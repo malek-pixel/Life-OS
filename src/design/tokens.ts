@@ -166,25 +166,85 @@ export const shadow = {
 } as const;
 
 /**
- * Motion. Durations are deliberately short; `ease` is the design's single
- * entrance curve and `press` its single overshoot curve.
+ * Motion.
+ *
+ * One scale for the whole product. Nothing in the app should write a bare
+ * duration or easing curve: every transition and animation resolves to a
+ * variable emitted from here, so the interface shares a single rhythm and a
+ * timing change is one edit rather than forty.
+ *
+ * The bands are chosen by *how much of the screen the change occupies*, which
+ * is what makes timing feel consistent across unrelated components:
+ *
+ *   micro     a colour, an icon, a dot            — feedback, no travel
+ *   fast      a button, toggle, chip, tab         — one control
+ *   standard  a card, dropdown, panel, drawer     — a region
+ *   emphasis  a screen, celebration, level-up     — the whole view
+ *
+ * `ease` is the design's entrance curve (decelerating, so things arrive and
+ * settle). `press` is its single overshoot curve, reserved for press feedback
+ * and small pops — overshoot on anything large reads as bouncy. `exit` is
+ * accelerating, and exits run at ~65% of the matching entrance, because a
+ * departing element should never keep the user waiting.
  */
 export const motion = {
-  instant: '.14s',
-  fast: '.16s',
-  quick: '.2s',
-  normal: '.25s',
-  entrance: '.42s',
-  stagger: '.5s',
-  bar: '.9s',
+  /* durations */
+  micro: '.12s',
+  fast: '.18s',
+  standard: '.28s',
+  emphasis: '.45s',
+  /** Exit counterpart to `standard` — deliberately shorter than its entrance. */
+  exit: '.18s',
+  /** Progress bars and counters: long enough to read as movement, not a jump. */
+  bar: '.7s',
+
+  /* easings */
   ease: 'cubic-bezier(.22,.61,.36,1)',
+  easeOut: 'cubic-bezier(.16,.84,.44,1)',
+  easeIn: 'cubic-bezier(.55,.06,.68,.19)',
   press: 'cubic-bezier(.34,1.4,.64,1)',
-  /** Screen skeleton dwell. Matches the design's `go()` timing. */
-  screenLoadMs: 360,
+
+  /* transform distances — one vocabulary of travel, not ad-hoc pixel values */
+  liftSm: '-1px',
+  lift: '-2px',
+  riseSm: '4px',
+  rise: '10px',
+  slide: '16px',
+
+  /* scales */
+  pressScale: '.972',
+  enterScale: '.98',
+
+  /** Stagger step between sibling entrances. Small: seven items must not crawl. */
+  staggerStep: '45ms',
+  /**
+   * How long the pointer must rest before a tooltip appears. Long enough that
+   * crossing the sidebar on the way elsewhere does not trigger a row of them.
+   */
+  tipDelay: '.35s',
+  /** One rotation of an indeterminate spinner. */
+  spin: '.7s',
+  /*
+   * Ambient loop periods. These are the only perpetual animations in the app -
+   * the skeleton shimmer and the XP bar's scanning highlight - and both are
+   * switchable in Settings > Accessibility. Slow on purpose: a fast loop in the
+   * corner of the eye is distracting rather than alive.
+   */
+  shimmer: '1.25s',
+  scan: '2.6s',
   /** Toast lifetime. Matches the design's `showToast()`. */
   toastMs: 3400,
   /** Counter roll-up duration. Matches the design's `animateCounters()`. */
   countUpMs: 850,
+} as const;
+
+/** Durations that are also needed in JS (exit timing, count-up, stagger). */
+export const motionMs = {
+  micro: 120,
+  fast: 180,
+  standard: 280,
+  emphasis: 450,
+  exit: 180,
 } as const;
 
 export const layout = {
@@ -224,6 +284,9 @@ export function cssVariables(): string {
   push('sh', shadow as unknown as Record<string, string>);
   lines.push(`--font-ui: ${font.ui};`);
   lines.push(`--font-mono: ${font.mono};`);
+  // Motion is emitted wholesale rather than cherry-picked, so a component can
+  // never be tempted to hardcode a duration the scale already names.
+  push('m', motion as unknown as Record<string, string>);
   lines.push(`--ease: ${motion.ease};`);
   lines.push(`--ease-press: ${motion.press};`);
   return lines.join('\n  ');

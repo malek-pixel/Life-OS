@@ -13,10 +13,11 @@
  */
 
 import { NavLink, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Icon, type IconName } from '../ui/Icon';
-import { IconButton, ProgressBar } from '../ui/primitives';
+import { IconButton, ProgressBar, cx } from '../ui/primitives';
 import { useCharacter, useSettings } from './hooks';
 import { levelForXp } from '../domain/xp';
 import { layout } from '../design/tokens';
@@ -68,8 +69,19 @@ export function Sidebar({
   const location = useLocation();
   const progression = levelForXp(character.totalXp);
 
-  // On a narrow window, following a link should close the overlay.
+  /*
+   * On a narrow window, following a link should close the overlay.
+   *
+   * The first run is skipped deliberately. As an overlay this component is
+   * mounted *by* the drawer opening, so an effect that fires on mount called
+   * onNavigate immediately and closed the drawer on the same tick it opened -
+   * the hamburger appeared to do nothing at all. Only a genuine change of route
+   * should dismiss it.
+   */
+  const mountedPath = useRef(location.pathname);
   useEffect(() => {
+    if (mountedPath.current === location.pathname) return;
+    mountedPath.current = location.pathname;
     if (overlay) onNavigate?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
@@ -80,6 +92,7 @@ export function Sidebar({
   return (
     <nav
       aria-label="Main"
+      className={cx('los-sidebar', overlay && 'los-sidebar-overlay')}
       style={{
         width,
         flex: 'none',
@@ -87,7 +100,6 @@ export function Sidebar({
         borderRight: '1px solid var(--c-border-faint)',
         display: 'flex',
         flexDirection: 'column',
-        transition: 'width .2s ease',
         height: '100%',
         ...(overlay
           ? { position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 40, boxShadow: 'var(--sh-overlay)' }
@@ -238,11 +250,34 @@ function Divider({ label, collapsed }: { label: string; collapsed: boolean }) {
 }
 
 function SidebarLink({ entry, collapsed }: { entry: NavEntry; collapsed: boolean }) {
+  /*
+   * Tooltip for the collapsed rail, replacing the native `title` - which cannot
+   * be styled and waits about a second before appearing.
+   *
+   * Positioned fixed, and measured on hover, because the rail scrolls: an
+   * absolutely-positioned tooltip is clipped by the `overflow: auto` on the
+   * link list, so a CSS-only version is invisible for exactly the items that
+   * need it. Fixed coordinates escape the scroll container.
+   *
+   * This is the visible affordance only. The accessible name comes from the
+   * screen-reader label below, because hover text names nothing.
+   */
+  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
+  const showTip = (event: { currentTarget: HTMLElement }) => {
+    if (!collapsed) return;
+    const r = event.currentTarget.getBoundingClientRect();
+    // Clamped to the viewport so an item at the very bottom stays readable.
+    setTip({ top: Math.min(r.top + r.height / 2, window.innerHeight - 24), left: r.right + 10 });
+  };
+
   return (
     <NavLink
       to={entry.to}
-      className="los-press"
-      title={collapsed ? entry.label : undefined}
+      className="los-press los-nav"
+      onMouseEnter={showTip}
+      onFocus={showTip}
+      onMouseLeave={() => setTip(null)}
+      onBlur={() => setTip(null)}
       style={({ isActive }) =>
         collapsed
           ? {
@@ -279,7 +314,29 @@ function SidebarLink({ entry, collapsed }: { entry: NavEntry; collapsed: boolean
             size={17}
             color={isActive ? 'var(--c-accent-text)' : 'var(--c-text-dim)'}
           />
-          {!collapsed ? <span className="truncate">{entry.label}</span> : null}
+          {/*
+            * Collapsed, the label is still rendered - just only for screen
+            * readers. The visible affordance is the styled tooltip, but a
+            * tooltip is a hover effect and carries no accessible name, so
+            * without this the icon rail would be eighteen unnamed links.
+            */}
+          {collapsed ? (
+            <>
+              <span className="los-sr">{entry.label}</span>
+              {tip
+                ? createPortal(
+                    // aria-hidden: the link is already named by the label above,
+                    // so announcing this too would just repeat it.
+                    <span className="los-tip-bubble" aria-hidden="true" style={{ top: tip.top, left: tip.left }}>
+                      {entry.label}
+                    </span>,
+                    document.body,
+                  )
+                : null}
+            </>
+          ) : (
+            <span className="truncate">{entry.label}</span>
+          )}
         </>
       )}
     </NavLink>
