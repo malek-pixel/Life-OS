@@ -1,0 +1,303 @@
+/*
+ * Life OS global stylesheet.
+ *
+ * Token variables are injected at runtime from tokens.ts (see ThemeProvider) so
+ * that the accent colour and accessibility preferences stay a single source of
+ * truth rather than being duplicated here. This file holds only:
+ *   - the reset
+ *   - the motion system (keyframes + entrance/stagger classes)
+ *   - shared interaction language (hover / focus / press)
+ *   - accessibility overrides (reduced motion, high contrast, large text)
+ * all lifted from the approved design.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--c-bg-root);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--c-accent-selection);
+}
+
+a {
+  color: var(--c-accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--c-accent-bright);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* Never remove an outline without replacing it. */
+:focus-visible {
+  outline: 2px solid var(--c-accent-bright);
+  outline-offset: 2px;
+  border-radius: var(--r-md);
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Screen-reader-only text, for icon-only controls and live regions. */
+.los-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip link - first tab stop, per ACCESSIBILITY. */
+.los-skip {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 100;
+}
+.los-skip:focus {
+  left: 8px;
+  padding: 8px 14px;
+  background: var(--c-bg-card);
+  border: 1px solid var(--c-accent-border);
+  border-radius: var(--r-lg);
+  color: var(--c-text);
+}
+
+/* ---------- scrollbars ---------- */
+.los-scroll {
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.09) transparent;
+}
+.los-scroll::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.los-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: var(--r-md);
+}
+.los-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- keyframes (verbatim from the design) ---------- */
+@keyframes losScan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+@keyframes losBlink {
+  0%, 60% { opacity: 1; }
+  61%, 100% { opacity: 0.25; }
+}
+@keyframes losPop {
+  0% { transform: scale(0.85); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes losFadeUp {
+  0% { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes losBarGrow {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+@keyframes losBarUp {
+  0% { transform: scaleY(0); }
+  100% { transform: scaleY(1); }
+}
+@keyframes losCountPop {
+  0% { opacity: 0; transform: translateY(6px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes losShimmer {
+  0% { background-position: -460px 0; }
+  100% { background-position: 460px 0; }
+}
+@keyframes losToastIn {
+  0% { opacity: 0; transform: translateX(22px) scale(0.97); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes losAmbient {
+  0% { transform: translate(0, 0); }
+  50% { transform: translate(2%, 2%); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes losRing {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  70% { transform: scale(1.25); opacity: 0; }
+  100% { opacity: 0; }
+}
+@keyframes losSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- motion system: entrance + stagger ---------- */
+.los-screen {
+  animation: losFadeUp 0.42s var(--ease) both;
+}
+.los-stagger > * {
+  animation: losFadeUp 0.5s var(--ease) both;
+}
+.los-stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.los-stagger > *:nth-child(2) { animation-delay: 0.07s; }
+.los-stagger > *:nth-child(3) { animation-delay: 0.12s; }
+.los-stagger > *:nth-child(4) { animation-delay: 0.17s; }
+.los-stagger > *:nth-child(5) { animation-delay: 0.22s; }
+.los-stagger > *:nth-child(6) { animation-delay: 0.27s; }
+.los-stagger > *:nth-child(7) { animation-delay: 0.32s; }
+
+.los-bar-fill {
+  animation: losBarGrow 0.9s var(--ease) both;
+  transform-origin: left;
+}
+.los-bar-up {
+  animation: losBarUp 0.7s var(--ease) both;
+  transform-origin: bottom;
+}
+.los-count {
+  display: inline-block;
+  animation: losCountPop 0.5s var(--ease) both;
+}
+.los-pop {
+  animation: losPop 0.28s var(--ease-press) both;
+}
+
+/* ---------- shared interaction language ---------- */
+/*
+ * The design applied press/hover via [style*="cursor:pointer"] selectors, which
+ * only worked because every element there was inline-styled. Here the same
+ * language is attached to explicit classes so it survives real components.
+ */
+.los-press {
+  transition:
+    transform 0.14s var(--ease-press),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    color 0.15s ease,
+    filter 0.2s ease;
+}
+.los-press:active:not(:disabled) {
+  transform: scale(0.972);
+}
+.los-press:disabled,
+.los-press[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.los-card-hover {
+  transition:
+    transform 0.2s var(--ease),
+    border-color 0.2s ease,
+    box-shadow 0.25s ease;
+}
+.los-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--c-border-strong);
+  box-shadow: var(--sh-card);
+}
+
+.los-row {
+  transition:
+    background-color 0.16s ease,
+    padding-left 0.16s ease;
+}
+.los-row:hover {
+  background: var(--c-fill-subtle);
+}
+
+/* ---------- accessibility ---------- */
+
+/*
+ * Reduced motion. Honoured both from the OS and from the in-app Accessibility
+ * setting (which sets data-reduce-motion on <html>), because a user on a desktop
+ * browser may want it here without changing their whole OS.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-reduce-motion='true'] *,
+html[data-reduce-motion='true'] *::before,
+html[data-reduce-motion='true'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* High contrast: lift the dim greys toward the primary text colour. */
+html[data-high-contrast='true'] {
+  --c-text-muted: #d8d9df;
+  --c-text-dim: #c6c7cf;
+  --c-text-faint: #bcbdc6;
+  --c-text-ghost: #adaeb7;
+  --c-border: rgba(255, 255, 255, 0.22);
+  --c-border-soft: rgba(255, 255, 255, 0.18);
+  --c-border-faint: rgba(255, 255, 255, 0.16);
+  --c-border-ghost: rgba(255, 255, 255, 0.12);
+}
+
+/* Larger text: scales the whole type ramp, so layout stays proportional. */
+html[data-large-text='true'] {
+  --fs-3xs: 10.5px;
+  --fs-2xs: 12px;
+  --fs-xs: 12.5px;
+  --fs-sm: 13px;
+  --fs-base: 13.5px;
+  --fs-md: 14px;
+  --fs-lg: 14.5px;
+  --fs-xl: 15px;
+  --fs-2xl: 17px;
+  --fs-3xl: 18px;
+  --fs-4xl: 21px;
+  --fs-5xl: 24px;
+  --fs-6xl: 29px;
+  --fs-7xl: 38px;
+}
+
+/* Compact rows setting - tightens list density. */
+html[data-compact='true'] {
+  --sp-row-y: 7px;
+}
+
+@media print {
+  .los-no-print { display: none !important; }
+}
