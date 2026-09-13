@@ -28,7 +28,7 @@ export function TopBar({
 
   return (
     <header
-      className="spread los-no-print"
+      className="spread los-no-print app-topbar"
       style={{
         height: 56,
         flex: 'none',

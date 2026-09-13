@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#09090C" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Life OS" />
+    <title>Sign in · Life OS</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/login.css" />
+    <script src="/login.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <form class="card" id="login-form" novalidate>
+        <div class="brand">
+          <img src="/logo-mark.svg" alt="" width="72" height="72" />
+          <h1 class="wordmark"><span class="sr">Life OS</span><span aria-hidden="true">LIFE <em>OS</em></span></h1>
+          <p>Private. Sign in to continue.</p>
+        </div>
+        </div>
+
+        <label for="password">Password</label>
+        <!--
+          The username field is hidden but real: iOS Keychain and password
+          managers only offer to save and fill when they see a username beside
+          the password. There is one account, so its value is fixed.
+        -->
+        <input type="text" name="username" value="owner" autocomplete="username" class="sr" tabindex="-1" aria-hidden="true" readonly />
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+          autofocus
+          enterkeyhint="go"
+          aria-describedby="login-error"
+        />
+
+        <p id="login-error" class="error" role="alert" aria-live="assertive" hidden></p>
+
+        <button type="submit" id="submit">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="label">Sign in</span>
+        </button>
+
+        <p class="note">There is no sign-up. This installation belongs to one person.</p>
+      </form>
+    </main>
+    <noscript><p class="noscript">Life OS needs JavaScript enabled to sign in.</p></noscript>
+  </body>
+</html>

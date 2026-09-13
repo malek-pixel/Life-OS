@@ -967,3 +967,229 @@
     row-gap: 10px;
   }
 }
+
+/* ================================================================== *
+ * Phone and Home Screen
+ *
+ * Life OS is used from an iPhone Home Screen as well as a desktop browser.
+ * Everything here is conditional - on a coarse pointer, a narrow window, or a
+ * safe-area inset that only exists on a notched phone - so the desktop
+ * layout the design specifies is unchanged.
+ * ================================================================== */
+
+/* Dynamic viewport height: 100vh on iOS includes the area behind the browser
+   toolbar, which pushed the bottom of every screen out of reach. */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Standalone mode draws under the status bar and home indicator
+   (viewport-fit=cover); pad the frame so nothing sits beneath them. */
+.app-topbar {
+  box-sizing: content-box;
+  padding-top: env(safe-area-inset-top);
+  padding-left: max(20px, env(safe-area-inset-left)) !important;
+  padding-right: max(20px, env(safe-area-inset-right)) !important;
+}
+#main {
+  /* Equals the design's 40px on desktop, where the inset is zero. */
+  padding-bottom: calc(40px + env(safe-area-inset-bottom)) !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+.los-sidebar-overlay {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+}
+.toast-stack {
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  right: max(20px, env(safe-area-inset-right));
+}
+.scrim-center,
+.scrim-top {
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+.drawer {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Dialogs size to the visible viewport, so the on-screen keyboard shrinks
+   them instead of pushing the footer buttons out of reach. */
+.modal {
+  max-height: 86vh;
+  max-height: 86dvh;
+}
+@media (max-width: 620px) {
+  #main {
+    padding-left: max(14px, env(safe-area-inset-left)) !important;
+    padding-right: max(14px, env(safe-area-inset-right)) !important;
+    padding-top: 16px !important;
+  }
+  .scrim-center {
+    align-items: flex-end;
+    padding: 0;
+  }
+  /* On a phone a dialog becomes a bottom sheet: full width, thumb-reachable
+     actions, clear of the home indicator. */
+  .scrim-center .modal {
+    max-width: 100%;
+    border-radius: var(--r-3xl) var(--r-3xl) 0 0;
+    max-height: calc(92dvh - env(safe-area-inset-top));
+  }
+  .scrim-center .overlay-footer {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+  }
+  .scrim-top {
+    padding-top: calc(12px + env(safe-area-inset-top));
+  }
+  .scrim-top > [role='dialog'] > * {
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  .toast-stack {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    max-width: none;
+  }
+}
+
+/* Touch devices: iOS zooms the whole page when a field under 16px takes
+   focus, and does not zoom back. */
+@media (pointer: coarse) {
+  .input,
+  .textarea,
+  .select,
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Comfortable targets (Apple HIG 44pt) without changing desktop density. */
+  .btn {
+    min-height: 44px;
+  }
+  .btn-sm {
+    min-height: 38px;
+  }
+  .icon-btn,
+  .icon-btn-sm {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .tab {
+    min-height: 40px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .toggle {
+    position: relative;
+  }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    inset: -12px -8px;
+  }
+  .list-row {
+    min-height: 52px;
+  }
+  .los-nav {
+    min-height: 44px;
+  }
+  .checkbox::after {
+    inset: -12px;
+  }
+
+  /* No hover on touch: a sticky hover state after a tap looks like a stuck
+     selection, so hover-only lifts are dropped. */
+  .los-card-hover:hover {
+    transform: none;
+  }
+
+  button,
+  a,
+  [role='button'],
+  [role='tab'] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/*
+ * Touch targets, second pass - from a sweep of every route at phone width that
+ * listed each control under 40px. Fixed at the class that produces them.
+ */
+@media (pointer: coarse) {
+  .btn-sm {
+    min-height: 44px;
+  }
+  /* Compact segmented choices (priority, area, frequency pickers). Absolutely
+     positioned buttons - calendar events sized by their duration - are left
+     alone, since a minimum height would misreport how long they are. */
+  button.los-press:not(.btn):not(.icon-btn):not(.tab):not([style*='position: absolute']) {
+    min-height: 44px;
+  }
+  .topbar-search {
+    min-height: 44px;
+    min-width: 44px !important;
+    justify-content: center;
+  }
+  .chip {
+    min-height: 40px;
+  }
+  /* Habit week dots stay 15px to read as a strip, with a halo to tap. */
+  .habit-day {
+    position: relative;
+  }
+  .habit-day::after {
+    content: '';
+    position: absolute;
+    inset: -13px -4px;
+  }
+  /* Card-header and breadcrumb links: padding enlarges the target, negative
+     margin keeps the header the height the design specifies. */
+  .card-header a,
+  nav[aria-label='Breadcrumb'] a {
+    display: inline-flex;
+    align-items: center;
+    padding-block: 13px;
+    margin-block: -13px;
+  }
+  a.row {
+    min-height: 44px;
+  }
+  input[type='search'],
+  input:not([type]),
+  input[type='text'] {
+    min-height: 44px;
+  }
+  /* A checkbox inside its label: the label is the target. */
+  label:has(> input[type='checkbox']) {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+  }
+}
+@media (pointer: coarse) {
+  .card-header a,
+  nav[aria-label='Breadcrumb'] a {
+    padding-inline: 8px;
+    margin-inline: -8px;
+  }
+  button[aria-label^='Use accent'] {
+    position: relative;
+  }
+  button[aria-label^='Use accent']::after {
+    content: '';
+    position: absolute;
+    inset: -2px -8px;
+  }
+}

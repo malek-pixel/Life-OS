@@ -227,15 +227,21 @@ export function ConfirmDialog({
       description={config.body}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
+          {/*
+            * Initial focus depends on what is at stake. For an ordinary
+            * confirmation, the action is focused so Enter confirms. For a
+            * destructive one - clear all data, delete - Cancel is focused, so a
+            * reflexive Enter does nothing and destroying data always takes a
+            * deliberate choice of the danger button.
+            */}
+          <Button variant="ghost" onClick={onClose} disabled={pending} autoFocus={!!config.danger}>
             Cancel
           </Button>
           <Button
             variant={config.danger ? 'danger' : 'primary'}
             onClick={run}
             loading={pending}
-            // Focused on open so Enter confirms, Escape cancels.
-            autoFocus
+            autoFocus={!config.danger}
           >
             {config.actionLabel}
           </Button>

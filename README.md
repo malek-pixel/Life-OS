@@ -5,9 +5,10 @@ routines, calendar, fitness, journal, notes, quests, achievements, reviews,
 analytics and an AI coach — as one connected system rather than twelve separate
 tools.
 
-**Single user. Local-first. No account, no backend, no recurring cost.**
-Your data lives in this browser on your machine and never leaves it, except when
-you export it or ask the AI coach a question.
+**Single owner. Private. Local-first data.** Deployed, the app sits behind a
+server-enforced sign-in. Your data lives in the browser on your device and is
+never stored on the server, which only checks your sign-in and relays AI coach
+requests with a key the browser never sees.
 
 ---
 
@@ -18,8 +19,8 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. There is no login — the app opens straight into a
-short setup and then into the dashboard.
+Open http://localhost:5173. The dev server runs without sign-in and opens
+straight into a short setup. Deployed builds require the owner password first.
 
 | Command | What it does |
 | --- | --- |
@@ -35,6 +36,36 @@ host or straight off the filesystem with no server-side route configuration.
 
 ---
 
+## Deploy (Vercel) and install on iPhone
+
+1. **Create the secrets locally.** Run the command below. It asks for your
+   password without showing it and prints two values. Use a long passphrase:
+   it is the only thing between the internet and your app.
+
+   ```bash
+   npm run auth:setup
+   ```
+
+2. **Import the repo in Vercel** (Add New → Project → this GitHub repo). The
+   settings come from `vercel.json`; nothing needs changing.
+3. **Add environment variables** (Project → Settings → Environment Variables,
+   Production): `LIFEOS_PASSWORD_HASH` and `LIFEOS_SESSION_SECRET` from step 1,
+   and optionally `GROQ_API_KEY` for the coach. See `.env.example`.
+4. **Deploy.** Open the URL: you should see only the sign-in page.
+5. **iPhone:** open the URL in Safari → Share → Add to Home Screen, then open
+   Life OS from the Home Screen and sign in there. iOS keeps Home Screen storage
+   separate from Safari, so use the Home Screen app for your data, or move data
+   with Settings → Data → Export / Import.
+
+To run the production build with authentication locally, put the three
+variables in a git-ignored `.env` file, run `npm run build`, then:
+
+```bash
+node --env-file=.env scripts/serve.js
+```
+
+---
+
 ## Architecture
 
 ```
@@ -45,7 +76,8 @@ UI (React screens)
               └── store (reactive in-memory mirror)
                     └── IndexedDB (authoritative storage)
 
-  ai/ ── Groq, called directly from the browser. The only network dependency.
+  server/ ── sign-in gate (every request) + AI proxy holding the Groq key.
+             Stores no user data.
 ```
 
 ### The rules that shape it
@@ -96,10 +128,9 @@ src/
 
 ## Data and privacy
 
-There is no server. Your data is never transmitted except in an AI request, and
-only when you use the coach. The one other network request is for the two web
-fonts from Google Fonts. It carries no user data, but it does tell Google the
-app was opened. Offline, the fonts fall back to the system stack.
+Your data is stored on your device, never on the server. It leaves the device
+only when you export it, or in an AI coach request you send. Fonts are
+self-hosted, so the app makes no third-party requests.
 
 - **Export** (Settings → Data) writes every table to JSON, including AI memory
   and usage logs, so "what does this app know about me" is always answerable.
@@ -110,8 +141,8 @@ app was opened. Offline, the fonts fall back to the system stack.
 
 ### AI
 
-The coach is optional and off until you add a free [Groq](https://console.groq.com)
-key in Settings → AI.
+The coach is optional. Deployed, it works once `GROQ_API_KEY` is set in the
+server environment; get a free key at [Groq](https://console.groq.com).
 
 - **Permissions are enforced in code, not in the prompt.** Read tools run
   automatically; anything that writes comes back as a proposal you confirm. The
@@ -123,17 +154,14 @@ key in Settings → AI.
 - **Usage is logged locally** as a guardrail, so a runaway loop is visible in
   Settings immediately rather than discovered as a broken assistant.
 
-**Key storage — read this.** A browser has no OS keychain, so **browser storage
-is not secure storage** and nothing here should be read as implying otherwise.
-The key is not encrypted at rest; any script on the page, an extension with
-access to it, or anyone who can read this browser profile can read the key.
+**Key storage.** In deployed builds the key is held **only on the server**. The
+coach calls `/api/ai/chat`, which checks your session and adds the key upstream;
+the browser never receives it. See [`docs/DECISIONS.md`](docs/DECISIONS.md) §13.
 
-Given that, the safest option the platform allows is the default: the key is
-held in `sessionStorage` and **wiped when you close the tab**. Persisting it
-across restarts is an explicit opt-in ("Remember on this device"). The key is
-never logged, never exported, and never baked into the build. The only genuinely
-secure alternative is a server holding it, which this architecture deliberately
-does not have — see [`docs/DECISIONS.md`](docs/DECISIONS.md) §6.
+The local dev server has no API, so `npm run dev` still takes a key in Settings
+and calls Groq from the browser. **Browser storage is not secure storage**, so
+that path exists for development only, and it is compiled out of production
+bundles.
 
 ---
 
@@ -143,7 +171,7 @@ does not have — see [`docs/DECISIONS.md`](docs/DECISIONS.md) §6.
 npm test
 ```
 
-Five suites, 138 tests, covering what silently corrupts data if wrong:
+Six suites, 167 tests, covering what silently corrupts data if wrong:
 
 - **`test/domain.test.ts`** — the pure logic. Streak calculation including
   protections, custom schedules, weekly targets and the rule that an unlogged
@@ -162,6 +190,9 @@ Five suites, 138 tests, covering what silently corrupts data if wrong:
 - **`test/scale.test.ts`** — every screen's selector against a heavy year of
   data (3,000 tasks, 40 habits logged daily, a 10,000-event ledger), timed after
   a write, with budgets tight enough to catch an accidental quadratic.
+- **`test/server.test.ts`** — the access layer, mostly as attacks: forged,
+  tampered, expired and revoked sessions; cross-site requests; path tricks; brute
+  force; a misconfigured deployment; and the AI proxy refusing without a session.
 - **`test/actions.test.ts`** — the action layer against a real IndexedDB
   (`fake-indexeddb`), covering the end-to-end flows: goal → project → task →
   complete → progress and XP propagate; habit → streak → XP; recurrence spawning

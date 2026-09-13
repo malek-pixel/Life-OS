@@ -35,14 +35,30 @@
  *   5. NEVER IN THE BUNDLE. It is entered at runtime, never an env var - a
  *      VITE_ prefixed value would be inlined into the build and be public.
  *
- * The only genuinely secure option is a server holding the key, which this
- * architecture deliberately does not have. That tradeoff is documented in
- * docs/DECISIONS.md rather than papered over.
+ * The only genuinely secure option is a server holding the key.
+ *
+ * ---------------------------------------------------------------------------
+ * PRODUCTION: THE KEY IS SERVER-SIDE
+ * ---------------------------------------------------------------------------
+ *
+ * Deployed builds do not use any of the storage above. Every request goes to
+ * the authenticated proxy at /api/ai/chat (server/handlers.js), which holds
+ * GROQ_API_KEY in the server environment and adds it upstream. The browser
+ * never receives the key, so it cannot be recovered from the bundle, from
+ * storage or from devtools. The session is verified before any upstream call.
+ *
+ * The browser-held key remains only for the local Vite dev server, which has no
+ * API routes. `AI_SERVER_PROXY` is a build-time constant, so the dev-only path
+ * is compiled out of production bundles.
  */
 
 import { AiError } from '../data/errors';
+import { goToLogin } from '../app/session';
 
 const KEY_STORAGE = 'life-os.groq-key';
+
+/** True in production builds: AI requests go through the authenticated server proxy. */
+export const AI_SERVER_PROXY: boolean = import.meta.env.PROD;
 
 export interface AiMessageInput {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -169,33 +185,46 @@ export const groqProvider: AiProvider = {
   name: 'Groq',
 
   isConfigured(): boolean {
-    return getApiKey() != null;
+    // Through the proxy the server decides; a missing server key comes back as
+    // a clear error on the first request rather than a disabled input.
+    return AI_SERVER_PROXY || getApiKey() != null;
   },
 
   async complete(messages, tools, options): Promise<AiCompletion> {
-    const key = getApiKey();
-    if (!key) {
-      throw new AiError('AI_NO_KEY', 'Add a Groq API key in Settings to use the coach.');
-    }
+    const body = JSON.stringify({
+      model: options.model,
+      messages,
+      ...(tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
+      temperature: 0.6,
+      max_tokens: 1200,
+    });
 
     let response: Response;
     try {
-      response = await fetch(`${baseUrl()}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model: options.model,
-          messages,
-          ...(tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
-          temperature: 0.6,
-          max_tokens: 1200,
-        }),
-        signal: options.signal,
-      });
+      if (AI_SERVER_PROXY) {
+        // No key and no Authorization header: the session cookie authenticates
+        // the request, and the server adds the Groq key upstream.
+        response = await fetch('/api/ai/chat', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          signal: options.signal,
+        });
+      } else {
+        const key = getApiKey();
+        if (!key) {
+          throw new AiError('AI_NO_KEY', 'Add a Groq API key in Settings to use the coach.');
+        }
+        response = await fetch(`${baseUrl()}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          body,
+          signal: options.signal,
+        });
+      }
     } catch (err) {
+      if (err instanceof AiError) throw err;
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw new AiError('AI_CANCELLED', 'That request was cancelled.');
       }
@@ -205,6 +234,25 @@ export const groqProvider: AiProvider = {
         'AI_UNAVAILABLE',
         'Could not reach Groq. Everything else in Life OS works offline — try the coach again when you are back online.',
         err,
+      );
+    }
+
+    if (AI_SERVER_PROXY && !response.ok) {
+      const detail = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (response.status === 401) {
+        // Session expired while the coach was open: back to sign-in.
+        goToLogin();
+        throw new AiError('AI_CANCELLED', 'Your session has ended. Sign in again to continue.');
+      }
+      if (response.status === 429) {
+        throw new AiError('AI_RATE_LIMITED', detail.message ?? 'Too many coach requests. Wait a moment and try again.');
+      }
+      if (detail.error === 'ai_not_configured' || detail.error === 'ai_key_rejected') {
+        throw new AiError('AI_NO_KEY', detail.message ?? 'The AI coach is not configured on the server.');
+      }
+      throw new AiError(
+        'AI_UNAVAILABLE',
+        `The AI service returned an error (${response.status}). Nothing in your data changed.`,
       );
     }
 

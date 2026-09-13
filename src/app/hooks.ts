@@ -210,10 +210,22 @@ function isEditable(target: EventTarget | null): boolean {
 export function useFocusTrap(active: boolean): React.RefObject<HTMLDivElement> {
   const ref = useRef<HTMLDivElement>(null);
   const previous = useRef<HTMLElement | null>(null);
+  const wasActive = useRef(false);
+
+  /*
+   * Record the trigger during render, on the transition to active - not in the
+   * effect. By the time an effect runs, React has already applied `autoFocus`
+   * inside the dialog, so the "previous" element was the dialog's own button,
+   * gone once it closed: focus was never returned and keyboard users were
+   * dropped at the top of the page.
+   */
+  if (active && !wasActive.current) {
+    previous.current = document.activeElement as HTMLElement | null;
+  }
+  wasActive.current = active;
 
   useEffect(() => {
     if (!active) return;
-    previous.current = document.activeElement as HTMLElement | null;
 
     const container = ref.current;
     if (!container) return;
@@ -225,9 +237,11 @@ export function useFocusTrap(active: boolean): React.RefObject<HTMLDivElement> {
         ),
       ).filter((el) => el.offsetParent !== null || el === document.activeElement);
 
-    // Focus the first control, so keyboard users land inside the dialog.
-    const initial = focusables()[0] ?? container;
-    initial.focus();
+    // Land keyboard users inside the dialog - unless a control inside already
+    // took focus via autoFocus, which is a deliberate choice to respect.
+    if (!container.contains(document.activeElement)) {
+      (focusables()[0] ?? container).focus();
+    }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Tab') return;
@@ -250,7 +264,8 @@ export function useFocusTrap(active: boolean): React.RefObject<HTMLDivElement> {
     container.addEventListener('keydown', onKeyDown);
     return () => {
       container.removeEventListener('keydown', onKeyDown);
-      previous.current?.focus?.();
+      const target = previous.current;
+      if (target?.isConnected) target.focus();
     };
   }, [active]);
 

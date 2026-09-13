@@ -466,3 +466,106 @@ and named.
 - **Duplicate XP events already written by the concurrency bug stay in the
   ledger.** It is append-only by design. Settings → Data → Rebuild realigns the
   cached total with the ledger, and was verified doing exactly that.
+
+## 13. Private deployment: authentication, AI proxy, iPhone
+
+**Supersedes §2 and §6 for deployed builds, at the owner's explicit request.**
+The app is now deployed publicly and used from an iPhone Home Screen, so it needs
+real, server-enforced access control and a server-held AI key.
+
+### What stays the same
+
+All application data stays in IndexedDB on the device. There is no database, no
+sync and no user table. Nothing about the data model, the XP ledger or the action
+layer changed. The server holds no user data, so there is nothing on it for an
+attacker to read or modify.
+
+### Authentication (server/auth.js, server/gate.js, middleware.js)
+
+- **One owner, no registration.** The only credential is `LIFEOS_PASSWORD_HASH`,
+  set in the host environment. There is no sign-up route, no user table, no
+  default account and no way to create one from the web.
+- **The password is never stored.** PBKDF2-SHA256, 600,000 iterations, random
+  salt, generated locally by `npm run auth:setup`.
+- **Sessions** are HMAC-SHA256-signed tokens in an `HttpOnly; Secure;
+  SameSite=Strict` cookie: 30 days, renewed daily on use. Page script cannot read
+  the cookie, other sites cannot send it, and it cannot be forged without
+  `LIFEOS_SESSION_SECRET`. Each token carries a fingerprint of the password hash,
+  so changing the password - or rotating the secret - signs out every device.
+- **Enforced before anything is served.** Vercel Routing Middleware runs the gate
+  on every request. Signed-out visitors get only the sign-in page, its CSS and JS,
+  the logo, the manifest and the icons. The app HTML, **every JS/CSS bundle** and
+  every API route are refused. Gating the bundle as well as the page matters: a
+  client-side check inside downloadable JavaScript could simply be skipped.
+- **Fails closed.** A missing or malformed hash or secret means nobody can sign in.
+- **Brute force** is slowed by the PBKDF2 cost, a minimum 750ms failure time, and
+  a rate limit of 5 attempts per address and 20 overall per 15 minutes.
+- **CSRF.** SameSite=Strict, plus an independent Origin/Sec-Fetch-Site check on
+  every state-changing endpoint. Redirects always go to fixed same-origin paths,
+  so there is no open redirect.
+- **Client side (src/app/session.ts).** The session is confirmed before React
+  mounts, so no private screen flashes. It is re-checked whenever the app may have
+  resumed without a reload - Home Screen resume, Back after signing out (bfcache),
+  and every 10 minutes while visible. A network failure is not treated as signed
+  out, so losing signal does not lock you out of your own local data.
+
+### AI (server/handlers.js `aiChat`)
+
+`GROQ_API_KEY` lives only in the server environment. Production builds send coach
+requests to `/api/ai/chat`, which checks the session itself (in addition to the
+gate), allow-lists the model, caps output tokens and body size, rate-limits, and
+adds the key upstream. The browser never receives the key, and the direct
+browser-to-Groq path is compiled out of the production bundle (verified: no
+`api.groq.com` in `dist/`). The browser-held key remains only for `npm run dev`.
+
+### Security headers (vercel.json)
+
+A strict CSP (`script-src 'self'`, `connect-src 'self'`, `frame-ancestors
+'none'`), HSTS, nosniff, no-referrer, COOP, Permissions-Policy and noindex. HTML
+is `no-store`, so Back after sign-out cannot show a cached app. Hashed assets are
+cacheable only privately. Google Fonts is gone: both families are self-hosted, so
+the app makes no third-party requests. `font-src` allows `data:` because Vite
+inlines the smallest font subsets - found by testing the real bundle under the
+CSP, where the fonts were otherwise blocked.
+
+### iPhone / Home Screen
+
+Manifest and Apple web-app metadata, standalone display, `viewport-fit=cover` with
+safe-area padding on the top bar, content, drawers and toasts, `100dvh` instead of
+`100vh`, 16px inputs on touch devices (iOS zooms the page on anything smaller),
+and 44px touch targets on coarse pointers. A sweep of 30 routes at 375, 390, 393,
+430 and 768px found no horizontal scrolling or clipped content, and reduced
+controls under 40px from 188 to a handful that still clear WCAG 2.2's 24px
+minimum. Every rule is conditional, so the desktop layout is unchanged (verified:
+main padding and compact button sizes identical to before).
+
+Destructive confirmations now open with **Cancel** focused, so a reflexive Enter
+cannot clear data. Focus returns to the control that opened a dialog; it
+previously did not, because the trigger was recorded after `autoFocus` had
+already moved focus into the dialog.
+
+The mark and wordmark follow the owner-supplied logo: a folded crimson L and
+"LIFE OS". All icon sizes, the favicon and the in-app mark are generated from one
+vector definition in `scripts/make-icons.js`.
+
+### Limitations that remain
+
+- **Per-instance rate limiting.** Serverless instances do not share memory, so the
+  login limit applies per warm instance, not globally, and a distributed attacker
+  gets more attempts. Mitigations: the PBKDF2 cost and a long random passphrase. A
+  shared limiter would need a store such as Upstash/Vercel KV.
+- **No second factor.** A single strong passphrase is the credential. Passkeys or
+  TOTP would be the next hardening step.
+- **Home Screen and Safari are separate storage on iOS.** Data created in Safari
+  does not appear in the Home Screen app and vice versa, and each needs its own
+  sign-in. Use the Home Screen app, or move data with Export/Import.
+- **Data is per device.** The iPhone and a desktop browser hold separate
+  databases. Sign-in protects access; it does not sync.
+- **A signed-out device still holds its data.** Signing out gates the app, but
+  IndexedDB stays on the device. Settings → Data → Clear all data removes it.
+- **No offline launch.** There is deliberately no service worker: a cached app
+  shell would open without the server confirming the session. The app needs a
+  connection to open; once open, it keeps working offline.
+- **Physical iPhone not tested.** Verified in browser emulation at iPhone widths
+  with touch pointers. Standalone launch, the on-screen keyboard and Keychain
+  autofill need a check on the device itself.

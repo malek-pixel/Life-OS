@@ -294,6 +294,7 @@ function HabitRow({ view, onEdit }: { view: HabitView; onEdit: () => void }) {
             <button
               key={day}
               type="button"
+              className="habit-day"
               disabled={!canProtect}
               onClick={() => protectDay(day)}
               aria-label={`${formatRelativeDay(day)}: ${state}${canProtect ? '. Use a streak protection' : ''}`}

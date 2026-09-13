@@ -39,7 +39,16 @@ import {
   parseImport,
   type ImportPreview,
 } from '../../data/portability';
-import { AI_MODELS, clearApiKey, getKeyScope, maskedKey, setApiKey, type KeyScope } from '../../ai/provider';
+import {
+  AI_MODELS,
+  AI_SERVER_PROXY,
+  clearApiKey,
+  getKeyScope,
+  maskedKey,
+  setApiKey,
+  type KeyScope,
+} from '../../ai/provider';
+import { AUTH_ENABLED, signOut } from '../../app/session';
 import { callsToday } from '../../ai/coach';
 import { levelForXp } from '../../domain/xp';
 import { formatMonthDay, toDayKey } from '../../domain/dates';
@@ -289,14 +298,27 @@ function AccountSection() {
         />
       </Group>
 
-      <Card>
-        <p className="card-kicker">SESSION</p>
-        <p style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-dim)', margin: 0, lineHeight: 1.65 }}>
-          There is no sign-in. Life OS runs entirely on this device with no account and no server, so
-          there is no session to end — closing the tab is all there is. Your data stays in this
-          browser until you clear it.
-        </p>
-      </Card>
+      {AUTH_ENABLED ? (
+        <Group title="SESSION">
+          <Row
+            label="Signed in"
+            description="This device stays signed in for 30 days of inactivity, renewed each time you open Life OS. Signing out requires the password again. Your data stays on this device either way."
+            control={
+              <Button variant="secondary" icon="close" onClick={() => void signOut()}>
+                Sign out
+              </Button>
+            }
+          />
+        </Group>
+      ) : (
+        <Card>
+          <p className="card-kicker">SESSION</p>
+          <p style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-dim)', margin: 0, lineHeight: 1.65 }}>
+            This is a local development build, which runs without sign-in. Deployed builds require
+            the owner password before anything loads.
+          </p>
+        </Card>
+      )}
     </>
   );
 }
@@ -481,129 +503,145 @@ function AiSection() {
 
   return (
     <>
-      <Card>
-        <p className="card-kicker">GROQ API KEY</p>
-
-        {/*
-          Stated up front and without euphemism. Browser storage is not secure
-          storage, and the UI must not imply otherwise.
-        */}
-        <div className="alert alert-warn" style={{ marginBottom: 14 }}>
-          <Icon name="alert" size={15} style={{ marginTop: 1 }} />
-          <div className="grow">
-            <strong>Browser storage is not secure storage.</strong> A web page has no access to an
-            OS keychain, so the key is not encrypted at rest. Any script on this page, a browser
-            extension with access to it, or anyone who can read this browser profile can read the
-            key. Use a key created only for Life OS, and revoke it if this machine is shared.
+      {AI_SERVER_PROXY ? (
+        <Card>
+          <p className="card-kicker">AI CONNECTION</p>
+          <div className="alert alert-info">
+            <Icon name="shield" size={15} style={{ marginTop: 1 }} />
+            <div className="grow">
+              <strong>The Groq API key is held on the server.</strong> Coach requests go through this
+              deployment, which checks that you are signed in and then adds the key itself. The key is
+              never sent to this browser, so it cannot be read from the page, from storage, or from
+              the downloaded code. It is configured as <code>GROQ_API_KEY</code> in the deployment
+              environment.
+            </div>
           </div>
-        </div>
-
-        <p style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-dim)', margin: '0 0 14px', lineHeight: 1.65 }}>
-          Life OS calls Groq directly from this device — no server sits in between, which is why
-          there is nowhere safer to put the key. It is sent only to Groq, never written to a log,
-          and deliberately excluded from your data export.
-        </p>
-
-        {savedKey ? (
-          <>
-            <div className="row" style={{ gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-              <Badge color="var(--c-success)" border="rgba(123,176,138,.4)">
-                Key set
-              </Badge>
-              <Badge
-                color={scope === 'session' ? 'var(--c-ai-bright)' : 'var(--c-warn-bright)'}
-                border={scope === 'session' ? 'rgba(123,154,208,.4)' : 'rgba(194,91,114,.4)'}
-              >
-                {scope === 'session' ? 'This session only' : 'Stored on this device'}
-              </Badge>
-              <span className="mono" style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-muted)' }}>
-                {savedKey}
-              </span>
-              <span className="grow" />
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={() =>
-                  confirm({
-                    title: 'Remove the API key?',
-                    body: 'The coach will stop working until you add a key again. Nothing else in Life OS is affected.',
-                    actionLabel: 'Remove key',
-                    danger: true,
-                    onConfirm: () => {
-                      clearApiKey();
-                      setSavedKey(null);
-                      setScope(null);
-                      toast.show('API key removed', { tone: 'muted' });
-                    },
-                  })
-                }
-              >
-                Remove
-              </Button>
+        </Card>
+      ) : (
+        <Card>
+          <p className="card-kicker">GROQ API KEY</p>
+  
+          {/*
+            Stated up front and without euphemism. Browser storage is not secure
+            storage, and the UI must not imply otherwise.
+          */}
+          <div className="alert alert-warn" style={{ marginBottom: 14 }}>
+            <Icon name="alert" size={15} style={{ marginTop: 1 }} />
+            <div className="grow">
+              <strong>Browser storage is not secure storage.</strong> A web page has no access to an
+              OS keychain, so the key is not encrypted at rest. Any script on this page, a browser
+              extension with access to it, or anyone who can read this browser profile can read the
+              key. Use a key created only for Life OS, and revoke it if this machine is shared.
             </div>
-            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-text-ghost)', margin: 0, lineHeight: 1.6 }}>
-              {scope === 'session'
-                ? 'The key is cleared when you close this tab. You will re-enter it next time — that is the safer default.'
-                : 'The key persists across restarts. It stays readable on disk until you remove it.'}
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="row" style={{ gap: 9, alignItems: 'flex-end', marginBottom: 12 }}>
-              <div className="grow">
-                <TextField
-                  label="API key"
-                  type="password"
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder="gsk_…"
-                  hint="Free at console.groq.com — no card required."
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <Button
-                variant="primary"
-                disabled={!keyInput.trim()}
-                onClick={() => {
-                  try {
-                    setApiKey(keyInput, remember ? 'device' : 'session');
-                    setSavedKey(maskedKey());
-                    setScope(getKeyScope());
-                    setKeyInput('');
-                    toast.show(
-                      remember ? 'API key saved on this device' : 'API key saved for this session',
-                      { tone: 'ok' },
-                    );
-                  } catch (err) {
-                    toast.showError(err instanceof AppError ? err.message : 'Could not save the key.');
+          </div>
+  
+          <p style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-dim)', margin: '0 0 14px', lineHeight: 1.65 }}>
+            Life OS calls Groq directly from this device — no server sits in between, which is why
+            there is nowhere safer to put the key. It is sent only to Groq, never written to a log,
+            and deliberately excluded from your data export.
+          </p>
+  
+          {savedKey ? (
+            <>
+              <div className="row" style={{ gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                <Badge color="var(--c-success)" border="rgba(123,176,138,.4)">
+                  Key set
+                </Badge>
+                <Badge
+                  color={scope === 'session' ? 'var(--c-ai-bright)' : 'var(--c-warn-bright)'}
+                  border={scope === 'session' ? 'rgba(123,154,208,.4)' : 'rgba(194,91,114,.4)'}
+                >
+                  {scope === 'session' ? 'This session only' : 'Stored on this device'}
+                </Badge>
+                <span className="mono" style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-muted)' }}>
+                  {savedKey}
+                </span>
+                <span className="grow" />
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() =>
+                    confirm({
+                      title: 'Remove the API key?',
+                      body: 'The coach will stop working until you add a key again. Nothing else in Life OS is affected.',
+                      actionLabel: 'Remove key',
+                      danger: true,
+                      onConfirm: () => {
+                        clearApiKey();
+                        setSavedKey(null);
+                        setScope(null);
+                        toast.show('API key removed', { tone: 'muted' });
+                      },
+                    })
                   }
-                }}
+                >
+                  Remove
+                </Button>
+              </div>
+              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-text-ghost)', margin: 0, lineHeight: 1.6 }}>
+                {scope === 'session'
+                  ? 'The key is cleared when you close this tab. You will re-enter it next time — that is the safer default.'
+                  : 'The key persists across restarts. It stays readable on disk until you remove it.'}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="row" style={{ gap: 9, alignItems: 'flex-end', marginBottom: 12 }}>
+                <div className="grow">
+                  <TextField
+                    label="API key"
+                    type="password"
+                    value={keyInput}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                    placeholder="gsk_…"
+                    hint="Free at console.groq.com — no card required."
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  disabled={!keyInput.trim()}
+                  onClick={() => {
+                    try {
+                      setApiKey(keyInput, remember ? 'device' : 'session');
+                      setSavedKey(maskedKey());
+                      setScope(getKeyScope());
+                      setKeyInput('');
+                      toast.show(
+                        remember ? 'API key saved on this device' : 'API key saved for this session',
+                        { tone: 'ok' },
+                      );
+                    } catch (err) {
+                      toast.showError(err instanceof AppError ? err.message : 'Could not save the key.');
+                    }
+                  }}
+                >
+                  Save key
+                </Button>
+              </div>
+  
+              {/* Persistence is opt-in, with the tradeoff stated at the point of choice. */}
+              <label
+                className="row"
+                style={{ gap: 8, fontSize: 'var(--fs-md)', color: 'var(--c-text-muted)', cursor: 'pointer' }}
               >
-                Save key
-              </Button>
-            </div>
-
-            {/* Persistence is opt-in, with the tradeoff stated at the point of choice. */}
-            <label
-              className="row"
-              style={{ gap: 8, fontSize: 'var(--fs-md)', color: 'var(--c-text-muted)', cursor: 'pointer' }}
-            >
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-              />
-              Remember on this device
-            </label>
-            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-text-ghost)', margin: '6px 0 0', lineHeight: 1.6 }}>
-              Off by default. Left off, the key is held for this tab only and is gone when you close
-              it — the shortest exposure a browser allows. Turning it on keeps the key on disk until
-              you remove it.
-            </p>
-          </>
-        )}
-      </Card>
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                />
+                Remember on this device
+              </label>
+              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-text-ghost)', margin: '6px 0 0', lineHeight: 1.6 }}>
+                Off by default. Left off, the key is held for this tab only and is gone when you close
+                it — the shortest exposure a browser allows. Turning it on keeps the key on disk until
+                you remove it.
+              </p>
+            </>
+          )}
+        </Card>
+      )}
 
       <Group title="CONTEXT THE AI CAN READ">
         <SettingToggle
@@ -854,7 +892,7 @@ function DataSection() {
         </p>
         <Row
           label="Clear all data"
-          description="Permanently erases every goal, task, habit, note, journal entry and log in this browser, and forgets your API key. Life OS restarts at setup."
+          description="Permanently erases every goal, task, habit, note, journal entry and log in this browser, and forgets any API key stored in it. Life OS restarts at setup. You stay signed in."
           control={
             <Button
               variant="danger"
@@ -972,8 +1010,8 @@ function AboutSection() {
         <Row label="Version" control={<span className="mono">1.0.0</span>} />
         <Row
           label="Architecture"
-          description="Single user, local-first, no backend and no account. Your data never leaves this device except when you export it."
-          control={<Badge color="var(--c-text-muted)">Local only</Badge>}
+          description="Single owner. Your data is stored on this device, never on a server, and leaves it only when you export it. The server only checks your sign-in and relays AI coach requests."
+          control={<Badge color="var(--c-text-muted)">Local data</Badge>}
         />
         <Row
           label="Design system"

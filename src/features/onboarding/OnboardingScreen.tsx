@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Button, Card, TextField, SelectField, ProgressBar } from '../../ui/primitives';
+import { LogoMark, Wordmark } from '../../ui/Logo';
 import { Icon, type IconName } from '../../ui/Icon';
 import { useToast } from '../../ui/overlays';
 import { useSettings } from '../../app/hooks';
@@ -73,7 +74,7 @@ export default function OnboardingScreen() {
   return (
     <main
       style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -84,20 +85,16 @@ export default function OnboardingScreen() {
       <div style={{ width: '100%', maxWidth: 560 }}>
         {/* ---------- header ---------- */}
         <div className="row" style={{ gap: 11, marginBottom: 22 }}>
-          <div
-            aria-hidden="true"
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 9,
-              background: 'var(--c-accent)',
-              boxShadow: '0 0 16px -2px var(--c-accent)',
-            }}
-          />
+          <LogoMark size={40} />
           <div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 600 }}>Life OS</div>
+            <div style={{ lineHeight: 1.4 }}>
+              <span className="los-sr">Life OS</span>
+              <span aria-hidden="true">
+                <Wordmark size={15} />
+              </span>
+            </div>
             <div className="mono" style={{ fontSize: 'var(--fs-3xs)', color: 'var(--c-text-ghost)' }}>
-              local · no account · your data stays here
+              private · your data stays on this device
             </div>
           </div>
         </div>
@@ -129,7 +126,7 @@ export default function OnboardingScreen() {
             <StepShell
               icon="dashboard"
               title="What should Life OS call you?"
-              body="There is no account and no sign-in — this is only used in the greeting and the sidebar. Everything you create stays in this browser on this device."
+              body="This is only used in the greeting and the sidebar. Everything you create is stored in this browser on this device, not on a server."
             >
               <TextField
                 label="Name"

@@ -159,7 +159,7 @@ function Shell() {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div className="app-shell" style={{ display: 'flex', overflow: 'hidden' }}>
       <a className="los-skip" href="#main">
         Skip to content
       </a>
