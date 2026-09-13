@@ -27,7 +27,8 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { useHotkey, useSettings, useStoreStatus, useViewport } from './hooks';
 import { store } from '../data/store';
 import { updateSettings } from '../data/actions';
-import { startSync } from '../data/sync';
+import { SYNC_AVAILABLE, startSync, syncNow } from '../data/sync';
+import { ensurePlan2026 } from '../data/seeds/plan2026';
 import { goToLogin } from './session';
 import { ConfirmProvider, ToastProvider } from '../ui/overlays';
 import { ErrorState, ScreenSkeleton } from '../ui/primitives';
@@ -84,7 +85,16 @@ function Boot() {
     void store.hydrate();
   }, [retryKey]);
 
-  useEffect(() => (status === 'ready' ? startSync({ onUnauthenticated: goToLogin }) : undefined), [status]);
+  useEffect(() => {
+    if (status !== 'ready') return undefined;
+    const stop = startSync({ onUnauthenticated: goToLogin });
+    // Pull what other devices already have before seeding the plan, so nothing
+    // made there is duplicated here.
+    void ensurePlan2026(() => (SYNC_AVAILABLE ? syncNow({ onUnauthenticated: goToLogin }) : Promise.resolve())).catch(
+      (err) => console.error('[seed] plan 2026-27 could not be created', err),
+    );
+    return stop;
+  }, [status]);
 
   if (status === 'error') {
     return (

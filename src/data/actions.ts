@@ -616,6 +616,8 @@ function areaForTask(task: Task): LifeArea | null {
  * ================================================================== */
 
 export interface GoalInput {
+  /** Optional fixed id, for seeded rows that must be identical on every synced device. */
+  id?: string;
   title: string;
   description?: string;
   area?: string;
@@ -670,7 +672,7 @@ function validateGoal(input: GoalInput) {
 async function createGoalImpl(input: GoalInput): Promise<ActionResult> {
   const fields = validateGoal(input);
   const tx = new Tx();
-  tx.create('goals', { id: newId(), ...stamps(), ...fields, completedAt: null });
+  tx.create('goals', { id: input.id ?? newId(), ...stamps(), ...fields, completedAt: null });
   return tx.commit();
 }
 
@@ -1373,6 +1375,8 @@ async function deleteNoteImpl(id: string): Promise<ActionResult> {
  * ================================================================== */
 
 export interface QuestInput {
+  /** Optional fixed id; requirement ids are derived from it. See GoalInput.id. */
+  id?: string;
   title: string;
   objective?: string;
   type?: string;
@@ -1411,7 +1415,7 @@ async function createQuestImpl(input: QuestInput): Promise<ActionResult> {
   v.assert();
 
   const tx = new Tx();
-  const questId = newId();
+  const questId = input.id ?? newId();
   tx.create('quests', {
     id: questId,
     ...stamps(),
@@ -1430,7 +1434,7 @@ async function createQuestImpl(input: QuestInput): Promise<ActionResult> {
 
   requirements.forEach((r, i) => {
     const req: QuestRequirement = {
-      id: newId(),
+      id: input.id ? `${input.id}-r${i}` : newId(),
       ...stamps(),
       questId,
       label: r.label.trim(),
@@ -1451,6 +1455,16 @@ async function toggleQuestRequirementImpl(id: string): Promise<ActionResult> {
   const tx = new Tx();
   const done = req.manualProgress >= req.target;
   tx.put('questRequirements', touch({ ...req, manualProgress: done ? 0 : req.target }));
+  return tx.commit();
+}
+
+/** Points a habit-streak requirement at the habit it measures. */
+async function linkQuestRequirementHabitImpl(id: string, habitId: string): Promise<ActionResult> {
+  const req = requireRow('questRequirements', id, 'requirement');
+  requireRow('habits', habitId, 'habit');
+  if (req.kind !== 'HABIT_STREAK') return { ...EMPTY_RESULT };
+  const tx = new Tx();
+  tx.put('questRequirements', touch({ ...req, refId: habitId }));
   return tx.commit();
 }
 
@@ -1798,6 +1812,7 @@ export const deleteNote = serialized(deleteNoteImpl);
 export const createQuest = serialized(createQuestImpl);
 export const toggleQuestRequirement = serialized(toggleQuestRequirementImpl);
 export const completeQuest = serialized(completeQuestImpl);
+export const linkQuestRequirementHabit = serialized(linkQuestRequirementHabitImpl);
 export const deleteQuest = serialized(deleteQuestImpl);
 export const createRoutine = serialized(createRoutineImpl);
 export const startRoutineRun = serialized(startRoutineRunImpl);

@@ -31,7 +31,13 @@ import { Modal, useConfirm, useToast } from '../../ui/overlays';
 import { Icon } from '../../ui/Icon';
 import { useAction, useCollection, useSelector } from '../../app/hooks';
 import { areaHex, selectQuests, type QuestView } from '../../domain/selectors';
-import { completeQuest, createQuest, deleteQuest, toggleQuestRequirement } from '../../data/actions';
+import {
+  completeQuest,
+  createQuest,
+  deleteQuest,
+  linkQuestRequirementHabit,
+  toggleQuestRequirement,
+} from '../../data/actions';
 import { LIFE_AREAS, QUEST_TYPES } from '../../data/schema';
 import { AppError } from '../../data/errors';
 
@@ -108,6 +114,7 @@ function QuestCard({ view }: { view: QuestView }) {
   const color = areaHex(quest.area);
   const complete = quest.status === 'COMPLETED';
   const allMet = view.total > 0 && view.met === view.total;
+  const habits = useCollection('habits');
 
   return (
     <Card>
@@ -216,6 +223,30 @@ function QuestCard({ view }: { view: QuestView }) {
             >
               {requirement.label}
             </span>
+            {requirement.kind === 'HABIT_STREAK' && requirement.refId == null && !complete ? (
+              habits.length > 0 ? (
+                <select
+                  className="select"
+                  aria-label={`Habit that "${requirement.label}" measures`}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) void linkQuestRequirementHabit(requirement.id, e.target.value);
+                  }}
+                  style={{ flex: '0 1 150px', height: 30, fontSize: 'var(--fs-xs)' }}
+                >
+                  <option value="">Link a habit…</option>
+                  {habits.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.title}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span style={{ fontSize: 'var(--fs-3xs)', color: 'var(--c-text-ghost)', flex: 'none' }}>
+                  Create a habit to track this
+                </span>
+              )
+            ) : null}
             <span className="mono" style={{ fontSize: 'var(--fs-3xs)', color: 'var(--c-text-ghost)', flex: 'none' }}>
               {label}
             </span>
