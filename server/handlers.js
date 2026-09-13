@@ -125,7 +125,23 @@ export async function session(request, env) {
  * ------------------------------------------------------------------ */
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const ALLOWED_MODELS = new Set(['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']);
+const ALLOWED_MODELS = new Set([
+  'llama-3.3-70b-versatile',
+  'openai/gpt-oss-120b',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'llama-3.1-8b-instant',
+  'openai/gpt-oss-20b',
+]);
+
+/** Groq's own error text: short, and never contains the key. */
+async function groqErrorMessage(response) {
+  try {
+    const body = await response.json();
+    return String(body?.error?.message ?? '').slice(0, 300);
+  } catch {
+    return '';
+  }
+}
 const MAX_BODY_BYTES = 200_000;
 const MAX_TOKENS = 1200;
 const UPSTREAM_TIMEOUT_MS = 55_000;
@@ -176,26 +192,34 @@ export async function aiChat(request, env) {
     return json(400, { error: 'bad_request', message: 'Unsupported model or empty conversation.' });
   }
 
-  const upstreamBody = {
-    model: body.model,
-    messages: body.messages,
-    temperature: 0.6,
-    max_tokens: MAX_TOKENS,
-    ...(Array.isArray(body.tools) && body.tools.length > 0 ? { tools: body.tools, tool_choice: 'auto' } : {}),
-  };
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   request.signal?.addEventListener?.('abort', () => controller.abort());
 
+  // Groq retires models from time to time. When the requested one is gone, fall
+  // back through the allow-list instead of breaking the coach.
+  const candidates = [body.model, ...[...ALLOWED_MODELS].filter((m) => m !== body.model)];
   let upstream;
+  let upstreamMessage = '';
   try {
-    upstream = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.GROQ_API_KEY}` },
-      body: JSON.stringify(upstreamBody),
-      signal: controller.signal,
-    });
+    for (const model of candidates) {
+      upstream = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${env.GROQ_API_KEY}` },
+        body: JSON.stringify({
+          model,
+          messages: body.messages,
+          temperature: 0.6,
+          max_tokens: MAX_TOKENS,
+          ...(Array.isArray(body.tools) && body.tools.length > 0 ? { tools: body.tools, tool_choice: 'auto' } : {}),
+        }),
+        signal: controller.signal,
+      });
+      if (upstream.ok || upstream.status === 401 || upstream.status === 403 || upstream.status === 429) break;
+      upstreamMessage = await groqErrorMessage(upstream);
+      console.error(`[ai] Groq ${upstream.status} for ${model}: ${upstreamMessage}`);
+      if (!/model|decommission|not found|does not exist|not supported/i.test(upstreamMessage) && upstream.status !== 404) break;
+    }
   } catch {
     return json(502, { error: 'upstream_unreachable', message: 'Could not reach the AI service.' });
   } finally {
@@ -211,7 +235,11 @@ export async function aiChat(request, env) {
     return json(429, { error: 'rate_limited', message: 'Groq is rate limiting requests right now.' });
   }
   if (!upstream.ok) {
-    return json(502, { error: 'upstream_error', status: upstream.status });
+    return json(502, {
+      error: 'upstream_error',
+      status: upstream.status,
+      message: `The AI service returned ${upstream.status}${upstreamMessage ? `: ${upstreamMessage}` : '.'}`,
+    });
   }
 
   // Pass the completion through, but only as JSON and never with upstream headers.

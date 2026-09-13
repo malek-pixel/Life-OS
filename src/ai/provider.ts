@@ -252,7 +252,7 @@ export const groqProvider: AiProvider = {
       }
       throw new AiError(
         'AI_UNAVAILABLE',
-        `The AI service returned an error (${response.status}). Nothing in your data changed.`,
+        `${detail.message ?? `The AI service returned an error (${response.status}).`} Nothing in your data changed.`,
       );
     }
 
@@ -334,5 +334,7 @@ function safeParseArgs(raw: string): Record<string, unknown> {
 /** Models offered in Settings. Free tier at time of writing. */
 export const AI_MODELS = [
   { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B — best quality' },
+  { value: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B — strong reasoning' },
+  { value: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout — balanced' },
   { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B — fastest' },
 ] as const;
