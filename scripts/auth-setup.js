@@ -14,14 +14,21 @@ import { hashPassword } from '../server/auth.js';
 
 const MIN_LENGTH = 12;
 
+// `npm run auth:setup -- --show` shows the password as it is typed, for anyone
+// who finds typing into a blank prompt confusing. Only do this with nobody
+// watching the screen.
+const SHOW = process.argv.includes('--show');
+
 function ask(question) {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    // Mute keystroke echo while the password is typed.
-    const write = rl._writeToOutput?.bind(rl);
-    rl._writeToOutput = (text) => {
-      if (text.includes(question)) write?.(text);
-    };
+    if (!SHOW) {
+      // Mute keystroke echo while the password is typed.
+      const write = rl._writeToOutput?.bind(rl);
+      rl._writeToOutput = (text) => {
+        if (text.includes(question)) write?.(text);
+      };
+    }
     rl.question(question, (answer) => {
       rl.close();
       process.stdout.write('\n');
@@ -30,7 +37,7 @@ function ask(question) {
   });
 }
 
-const password = await ask('Owner password (not shown): ');
+const password = await ask(SHOW ? 'Choose your Life OS password: ' : 'Owner password (not shown): ');
 if (password.length < MIN_LENGTH) {
   console.error(`\nUse at least ${MIN_LENGTH} characters. A long passphrase of random words is best -`);
   console.error('this is the only thing standing between the internet and your app.');
