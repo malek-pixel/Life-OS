@@ -14,7 +14,7 @@
  * decorative. The ones that do nothing yet are simply not shown.
  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import {
@@ -86,12 +86,20 @@ export default function SettingsScreen() {
   const navigate = useNavigate();
   const active = (SECTIONS.some((s) => s.id === section) ? section : 'account') as SectionId;
 
+  // On a phone the sections are a scrolling row; keep the current one in view.
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    navRef.current
+      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [active]);
+
   return (
     <>
       <PageHeader title="Settings" subtitle="Everything here changes how Life OS actually behaves." />
 
       <div className="settings-layout">
-        <nav aria-label="Settings sections" className="card" style={{ padding: 8 }}>
+        <nav ref={navRef} aria-label="Settings sections" className="card" style={{ padding: 8 }}>
           {SECTIONS.map((entry) => (
             <button
               key={entry.id}

@@ -40,7 +40,7 @@ export function TopBar({
     >
       <div className="row grow" style={{ gap: 12, minWidth: 0 }}>
         {onOpenNav ? (
-          <IconButton icon="dashboard" label="Open navigation" onClick={onOpenNav} />
+          <IconButton icon="menu" label="Open navigation" onClick={onOpenNav} />
         ) : null}
 
         <nav aria-label="Breadcrumb" className="row truncate" style={{ gap: 7, minWidth: 0 }}>

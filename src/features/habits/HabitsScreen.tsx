@@ -111,7 +111,7 @@ export default function HabitsScreen() {
               <span className="card-kicker grow" style={{ margin: 0 }}>
                 ACTIVE HABITS
               </span>
-              <div className="row mono" style={{ gap: 5, flex: 'none' }}>
+              <div className="row mono habit-week-header" style={{ gap: 5, flex: 'none' }}>
                 {weekdayInitials(settings.weekStartsMonday).map((letter, i) => (
                   <span
                     key={i}
@@ -240,7 +240,7 @@ function HabitRow({ view, onEdit }: { view: HabitView; onEdit: () => void }) {
   };
 
   return (
-    <div className="list-row los-row">
+    <div className="list-row los-row habit-row">
       <button
         type="button"
         role="checkbox"
@@ -277,7 +277,7 @@ function HabitRow({ view, onEdit }: { view: HabitView; onEdit: () => void }) {
       </div>
 
       {/* --- week strip: real per-day state, clickable to recover a miss --- */}
-      <div className="row" style={{ gap: 5, flex: 'none' }} role="group" aria-label="This week">
+      <div className="row habit-week" style={{ gap: 5, flex: 'none' }} role="group" aria-label="This week">
         {view.week.map(({ day, state }) => {
           const background =
             state === 'done'

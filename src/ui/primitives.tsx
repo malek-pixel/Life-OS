@@ -383,9 +383,16 @@ export function Tabs<T extends string>({
     };
     measure();
 
+    // Web fonts arriving change every label's width after the first measure.
+    void document.fonts?.ready.then(measure);
+
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
+    // Each tab, not just the bar: on a phone the tabs stretch to fill the row,
+    // so a tab can move without the bar's own size changing - which left the
+    // pill sitting between two tabs.
     observer.observe(list);
+    list.querySelectorAll('[role="tab"]').forEach((tab) => observer.observe(tab));
     return () => observer.disconnect();
   }, [value, options]);
 

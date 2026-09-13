@@ -43,6 +43,7 @@ export type IconName =
   | 'chevronDown'
   | 'trash'
   | 'edit'
+  | 'menu'
   | 'more'
   | 'pin'
   | 'archive'
@@ -161,6 +162,11 @@ const PATHS: Record<IconName, Path[]> = {
   ],
   edit: [
     ['path', { d: 'M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z' }],
+  ],
+  menu: [
+    ['path', { d: 'M4 7h16' }],
+    ['path', { d: 'M4 12h16' }],
+    ['path', { d: 'M4 17h16' }],
   ],
   more: [
     ['circle', { cx: 12, cy: 5, r: 1 }],

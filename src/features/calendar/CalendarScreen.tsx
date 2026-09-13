@@ -63,7 +63,11 @@ const GUTTER = 52;
 export default function CalendarScreen() {
   const settings = useSettings();
   const toast = useToast();
-  const [mode, setMode] = useState<ViewMode>('week');
+  // A phone opens on Day: seven hour-grid columns in 390px are too narrow to
+  // read or tap. Week and Month stay one tap away.
+  const [mode, setMode] = useState<ViewMode>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 620px)').matches ? 'day' : 'week',
+  );
   const [anchor, setAnchor] = useState<DayKey>(todayKey());
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [creating, setCreating] = useState<{ day: DayKey; minute: number } | null>(null);

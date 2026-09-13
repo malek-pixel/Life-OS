@@ -359,7 +359,7 @@ export default function DashboardScreen() {
 
 function Greeting({ name }: { name?: string }) {
   return (
-    <header style={{ marginBottom: 18 }}>
+    <header className="greeting" style={{ marginBottom: 18 }}>
       <p className="card-kicker" style={{ marginBottom: 7 }}>
         {greetingKicker()}
       </p>
