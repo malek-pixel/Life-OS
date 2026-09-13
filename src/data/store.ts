@@ -20,10 +20,12 @@
  */
 
 import {
-  clearAllData,
+  SYNC_META,
+  SYNC_OUTBOX,
   transact,
   txClear,
   txDelete,
+  txGet,
   txGetAll,
   txPut,
 } from './db';
@@ -49,6 +51,35 @@ export type Change =
 
 type Listener = () => void;
 
+/** A row change waiting to be pushed to the sync server. One per row, newest wins. */
+export interface OutboxEntry {
+  key: string;
+  store: StoreName;
+  id: string;
+  /** When this device made the change, unix ms. Decides conflicts. */
+  ts: number;
+  /** The whole row, or null for a hard delete. */
+  value: unknown;
+}
+
+/** A row change received from the sync server. */
+export interface RemoteChange {
+  store: string;
+  id: string;
+  ts: number;
+  value: unknown;
+}
+
+export interface SyncMeta {
+  id: 'state';
+  /** Highest server sequence number this device has applied. */
+  cursor: number;
+  /** True once this device's existing data has been queued for upload. */
+  enabled: boolean;
+}
+
+const outboxKey = (store: string, id: string) => `${store}/${id}`;
+
 const ALL_STORES = Object.values(STORES) as StoreName[];
 
 function emptyCollections(): Collections {
@@ -67,6 +98,12 @@ export class LifeOsStore {
   private version = 0;
 
   status: StoreStatus = 'idle';
+
+  /**
+   * Whether commits are recorded in the sync outbox. Off until this device first
+   * joins sync, which queues everything that existed before (see enableSync).
+   */
+  private syncEnabled = false;
   error: Error | null = null;
 
   /** Bumped on every commit; the value React subscribes to. */
@@ -99,13 +136,15 @@ export class LifeOsStore {
         // drains, so awaiting each read in turn lets the transaction close
         // underneath the loop and the remaining reads never resolve - which
         // presents as the app hanging on the boot skeleton.
-        await transact(ALL_STORES, 'readonly', async (tx) => {
+        await transact([...ALL_STORES, SYNC_META], 'readonly', async (tx) => {
+          const meta = txGet<SyncMeta>(tx, SYNC_META, 'state');
           const pending = ALL_STORES.map((name) =>
             txGetAll<unknown>(tx, name).then((rows) => [name, rows] as const),
           );
           for (const [name, rows] of await Promise.all(pending)) {
             (next as Record<string, unknown[]>)[name] = rows;
           }
+          this.syncEnabled = (await meta)?.enabled === true;
         });
         this.collections = next;
         await this.ensureSingletons();
@@ -216,16 +255,21 @@ export class LifeOsStore {
   /** Writes a changeset to IndexedDB inside a single transaction. */
   private async persist(changes: Change[]): Promise<void> {
     const stores = Array.from(new Set(changes.map((c) => c.store)));
+    const outbox = this.syncEnabled ? this.outboxFor(changes) : [];
+    if (outbox.length > 0) stores.push(SYNC_OUTBOX);
     try {
       await transact(stores, 'readwrite', async (tx) => {
         // Issued synchronously, for the same auto-commit reason as hydrate().
-        await Promise.all(
-          changes.map((change) =>
+        // Outbox entries share the transaction, so a change is never stored
+        // without being queued for the other devices, or the reverse.
+        await Promise.all([
+          ...changes.map((change) =>
             change.op === 'put'
               ? txPut(tx, change.store, change.value)
               : txDelete(tx, change.store, change.id),
           ),
-        );
+          ...outbox.map((entry) => txPut(tx, SYNC_OUTBOX, entry)),
+        ]);
       });
     } catch (err) {
       throw toAppError(err);
@@ -274,9 +318,55 @@ export class LifeOsStore {
     this.collections = { ...this.collections };
   }
 
-  /** Wipes every store and resets memory. Settings > Danger zone. */
+  /** Outbox entries for a changeset; a later change to the same row replaces an earlier one. */
+  private outboxFor(changes: Change[]): OutboxEntry[] {
+    const now = Date.now();
+    const entries = new Map<string, OutboxEntry>();
+    for (const change of changes) {
+      const id = change.op === 'put' ? (change.value as { id: string }).id : change.id;
+      const key = outboxKey(change.store, id);
+      entries.set(key, {
+        key,
+        store: change.store,
+        id,
+        ts: now,
+        value: change.op === 'put' ? change.value : null,
+      });
+    }
+    return [...entries.values()];
+  }
+
+  /** Deletions for every held row not in `keep`, so a wipe reaches synced devices too. */
+  private tombstonesFor(keep: Map<StoreName, unknown[]> = new Map()): Change[] {
+    const out: Change[] = [];
+    for (const name of ALL_STORES) {
+      const kept = new Set(((keep.get(name) ?? []) as Array<{ id: string }>).map((r) => r.id));
+      for (const row of (this.collections as Record<string, Array<{ id: string }>>)[name] ?? []) {
+        if (!kept.has(row.id)) out.push({ op: 'delete', store: name, id: row.id });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Wipes every store and resets memory. Settings > Danger zone.
+   *
+   * With sync on, the deletions are queued too, so the data is erased on every
+   * device rather than downloaded straight back.
+   */
   async clearAll(): Promise<void> {
-    await clearAllData();
+    const outbox = this.syncEnabled ? this.outboxFor(this.tombstonesFor()) : [];
+    try {
+      // Every clear is issued before the first await; see clearAllData in db.ts.
+      await transact([...ALL_STORES, SYNC_OUTBOX], 'readwrite', async (tx) => {
+        await Promise.all([
+          ...ALL_STORES.map((name) => txClear(tx, name)),
+          ...outbox.map((entry) => txPut(tx, SYNC_OUTBOX, entry)),
+        ]);
+      });
+    } catch (err) {
+      throw toAppError(err);
+    }
     this.collections = emptyCollections();
     await this.ensureSingletons();
     this.version++;
@@ -300,13 +390,25 @@ export class LifeOsStore {
     // then write - leaves a window where a failure between them destroys the
     // existing data and restores nothing. Here the import either fully replaces
     // the database or leaves it exactly as it was.
+    // With sync on, an import replaces the data on every device: rows it does
+    // not contain are deleted everywhere, and every row it does is sent out.
+    const outbox = this.syncEnabled
+      ? this.outboxFor([
+          ...this.tombstonesFor(incoming),
+          ...[...incoming].flatMap(([name, rows]) =>
+            rows.map((value): Change => ({ op: 'put', store: name, value })),
+          ),
+        ])
+      : [];
+
     try {
-      await transact(ALL_STORES, 'readwrite', async (tx) => {
+      await transact([...ALL_STORES, SYNC_OUTBOX], 'readwrite', async (tx) => {
         const ops: Array<Promise<unknown>> = [];
         for (const name of ALL_STORES) ops.push(txClear(tx, name));
         for (const [name, rows] of incoming) {
           for (const row of rows) ops.push(txPut(tx, name, row));
         }
+        for (const entry of outbox) ops.push(txPut(tx, SYNC_OUTBOX, entry));
         await Promise.all(ops);
       });
     } catch (err) {
@@ -322,6 +424,125 @@ export class LifeOsStore {
     await this.ensureSingletons();
     this.version++;
     this.notify();
+  }
+
+  /* ---------------- sync ---------------- */
+  //
+  // Called only by src/data/sync.ts, inside the action write queue, so no local
+  // action can commit between reading the outbox and acting on it.
+
+  async readSyncMeta(): Promise<SyncMeta> {
+    const meta = await transact(SYNC_META, 'readonly', (tx) => txGet<SyncMeta>(tx, SYNC_META, 'state'));
+    return meta ?? { id: 'state', cursor: 0, enabled: false };
+  }
+
+  async readOutbox(): Promise<OutboxEntry[]> {
+    return transact(SYNC_OUTBOX, 'readonly', (tx) => txGetAll<OutboxEntry>(tx, SYNC_OUTBOX));
+  }
+
+  get isSyncEnabled(): boolean {
+    return this.syncEnabled;
+  }
+
+  /**
+   * Applies rows from other devices and records how far this device has read.
+   *
+   * A row with a pending local change newer than the incoming one is skipped:
+   * the local change wins and will be pushed. Otherwise the incoming row wins
+   * and the older pending local change is dropped. Incoming rows are not queued
+   * for upload, so changes never echo back and forth.
+   *
+   * Returns the names of the stores that changed.
+   */
+  async applyRemote(
+    remote: RemoteChange[],
+    cursor: number,
+    knownStores: ReadonlySet<string>,
+  ): Promise<Set<StoreName>> {
+    const pending = new Map((await this.readOutbox()).map((e) => [e.key, e]));
+    const changes: Change[] = [];
+    const superseded: string[] = [];
+
+    for (const r of remote) {
+      if (!knownStores.has(r.store)) continue;
+      const key = outboxKey(r.store, r.id);
+      const local = pending.get(key);
+      if (local && local.ts > r.ts) continue;
+      if (local) superseded.push(key);
+      const name = r.store as StoreName;
+      if (r.value === null) {
+        if (this.byId(name as keyof StoreTypes, r.id)) changes.push({ op: 'delete', store: name, id: r.id });
+      } else {
+        changes.push({ op: 'put', store: name, value: r.value });
+      }
+    }
+
+    const stores = Array.from(new Set([...changes.map((c) => c.store), SYNC_META, SYNC_OUTBOX]));
+    const meta: SyncMeta = { id: 'state', cursor, enabled: this.syncEnabled };
+    try {
+      await transact(stores, 'readwrite', async (tx) => {
+        await Promise.all([
+          ...changes.map((change) =>
+            change.op === 'put'
+              ? txPut(tx, change.store, change.value)
+              : txDelete(tx, change.store, change.id),
+          ),
+          ...superseded.map((key) => txDelete(tx, SYNC_OUTBOX, key)),
+          txPut(tx, SYNC_META, meta),
+        ]);
+      });
+    } catch (err) {
+      throw toAppError(err);
+    }
+
+    if (changes.length > 0) {
+      this.apply(changes);
+      await this.ensureSingletons();
+      this.version++;
+      this.notify();
+    }
+    return new Set(changes.map((c) => c.store));
+  }
+
+  /**
+   * Joins sync: queues every row this device already had, except rows the server
+   * already holds. On a device's first sync the server copy of a shared row
+   * (settings, the character rollup) wins over the new device's own defaults.
+   */
+  async enableSync(serverKeys: ReadonlySet<string>): Promise<void> {
+    type Row = { id: string; updatedAt?: number; createdAt?: number };
+    const entries: OutboxEntry[] = [];
+    for (const name of ALL_STORES) {
+      for (const row of (this.collections as Record<string, Row[]>)[name] ?? []) {
+        const key = outboxKey(name, row.id);
+        if (serverKeys.has(key)) continue;
+        const ts =
+          typeof row.updatedAt === 'number' ? row.updatedAt : typeof row.createdAt === 'number' ? row.createdAt : 0;
+        entries.push({ key, store: name, id: row.id, ts, value: row });
+      }
+    }
+    const current = await this.readSyncMeta();
+    try {
+      await transact([SYNC_OUTBOX, SYNC_META], 'readwrite', async (tx) => {
+        await Promise.all([
+          ...entries.map((entry) => txPut(tx, SYNC_OUTBOX, entry)),
+          txPut(tx, SYNC_META, { ...current, enabled: true }),
+        ]);
+      });
+    } catch (err) {
+      throw toAppError(err);
+    }
+    this.syncEnabled = true;
+  }
+
+  /** Drops pushed entries, unless the row changed again while the push was in flight. */
+  async acknowledgePushed(sent: OutboxEntry[]): Promise<void> {
+    const current = new Map((await this.readOutbox()).map((e) => [e.key, e]));
+    const done = sent.filter((e) => current.get(e.key)?.ts === e.ts).map((e) => e.key);
+    if (done.length === 0) return;
+    await transact(SYNC_OUTBOX, 'readwrite', async (tx) => {
+      await Promise.all(done.map((key) => txDelete(tx, SYNC_OUTBOX, key)));
+    });
   }
 
   /* ---------------- subscription ---------------- */
@@ -342,6 +563,7 @@ export class LifeOsStore {
     this.collections = emptyCollections();
     this.status = 'idle';
     this.error = null;
+    this.syncEnabled = false;
     // Bumped, never reset. The version is a cache key - for React and for
     // memoized selectors - so reusing a number that once meant different data
     // would hand back a stale result.

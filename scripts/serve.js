@@ -15,6 +15,7 @@ import { extname, join, normalize } from 'node:path';
 
 import { decide } from '../server/gate.js';
 import { aiChat, login, logout, session } from '../server/handlers.js';
+import { sync } from '../server/sync.js';
 
 const ROOT = normalize(join(process.cwd(), 'dist'));
 const PORT = Number(process.env.PORT ?? 4173);
@@ -37,6 +38,7 @@ const ROUTES = {
   '/api/auth/logout': logout,
   '/api/auth/session': session,
   '/api/ai/chat': aiChat,
+  '/api/sync': sync,
 };
 
 /** Applies vercel.json "headers" rules whose source matches the path. */

@@ -24,7 +24,16 @@ export const DB_NAME = 'life-os';
  * Schema version. Bump this and append to MIGRATIONS - never edit an existing
  * migration, because it has already run on the real database.
  */
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
+
+/**
+ * Bookkeeping stores for cross-device sync (src/data/sync.ts). Deliberately not
+ * in STORES: they are not user data, so export, import, clear and hydrate never
+ * treat them as tables. The casts let them share transactions with real stores,
+ * which is the point - a change and its outbox entry commit together.
+ */
+export const SYNC_OUTBOX = 'syncOutbox' as unknown as StoreName;
+export const SYNC_META = 'syncMeta' as unknown as StoreName;
 
 type MigrationFn = (db: IDBDatabase, tx: IDBTransaction) => void;
 
@@ -42,6 +51,11 @@ const MIGRATIONS: MigrationFn[] = [
         store.createIndex(idx.name, idx.keyPath, { unique: false });
       }
     }
+  },
+  // v2 - sync outbox (one entry per changed row, keyed "store/id") and sync state.
+  (db) => {
+    if (!db.objectStoreNames.contains('syncOutbox')) db.createObjectStore('syncOutbox', { keyPath: 'key' });
+    if (!db.objectStoreNames.contains('syncMeta')) db.createObjectStore('syncMeta', { keyPath: 'id' });
   },
 ];
 

@@ -31,6 +31,7 @@ import { useConfirm, useToast } from '../../ui/overlays';
 import { useCharacter, useSelector, useSettings } from '../../app/hooks';
 import { rebuildCharacterState, updateSettings } from '../../data/actions';
 import { store } from '../../data/store';
+import { SYNC_AVAILABLE, syncNow, useSyncStatus, type SyncState } from '../../data/sync';
 import {
   applyImport,
   downloadCsv,
@@ -48,7 +49,7 @@ import {
   setApiKey,
   type KeyScope,
 } from '../../ai/provider';
-import { AUTH_ENABLED, signOut } from '../../app/session';
+import { AUTH_ENABLED, goToLogin, signOut } from '../../app/session';
 import { callsToday } from '../../ai/coach';
 import { levelForXp } from '../../domain/xp';
 import { formatMonthDay, toDayKey } from '../../domain/dates';
@@ -720,6 +721,59 @@ function AiSection() {
   );
 }
 
+function SyncGroup() {
+  const sync = useSyncStatus();
+  const pending = sync.pending > 0 ? ` · ${sync.pending} change${sync.pending === 1 ? '' : 's'} waiting` : '';
+  const last = sync.lastSyncedAt ? `Last synced ${new Date(sync.lastSyncedAt).toLocaleTimeString()}` : 'Not synced yet';
+  const description: Record<SyncState, string> = {
+    off: 'Sync is not available in this build.',
+    syncing: `Syncing…${pending}`,
+    synced: `${last}${pending}. Changes on your other signed-in devices appear here within about 30 seconds.`,
+    offline: `Offline. Everything still works and saves on this device; it syncs when you reconnect.${pending}`,
+    'not-configured':
+      'Not set up on the server. Add an Upstash Redis database under Vercel → Storage, connect it to this project and redeploy.',
+    error: `Sync failed: ${sync.message ?? 'unknown error'}. Your data is safe on this device; it will retry.${pending}`,
+  };
+  const color: Record<SyncState, string> = {
+    off: 'var(--c-text-muted)',
+    syncing: 'var(--c-ai-bright)',
+    synced: 'var(--c-success)',
+    offline: 'var(--c-text-muted)',
+    'not-configured': 'var(--c-text-muted)',
+    error: 'var(--c-danger-bright)',
+  };
+  const label: Record<SyncState, string> = {
+    off: 'Off',
+    syncing: 'Syncing',
+    synced: 'Synced',
+    offline: 'Offline',
+    'not-configured': 'Not set up',
+    error: 'Error',
+  };
+
+  return (
+    <Group title="SYNC">
+      <Row
+        label="Sync across devices"
+        description={description[sync.state]}
+        control={
+          <div className="row" style={{ gap: 9 }}>
+            <Badge color={color[sync.state]}>{label[sync.state]}</Badge>
+            <Button
+              variant="ghost"
+              icon="refresh"
+              disabled={sync.state === 'syncing'}
+              onClick={() => void syncNow({ onUnauthenticated: goToLogin })}
+            >
+              Sync now
+            </Button>
+          </div>
+        }
+      />
+    </Group>
+  );
+}
+
 function DataSection() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -730,6 +784,7 @@ function DataSection() {
 
   return (
     <>
+      {SYNC_AVAILABLE ? <SyncGroup /> : null}
       <Group title="PORTABILITY">
         <Row
           label="Export everything"
@@ -769,8 +824,8 @@ function DataSection() {
         />
         <Row
           label="Storage"
-          description="Local to this browser on this device. There is no cloud copy — export regularly."
-          control={<Badge color="var(--c-text-muted)">This device</Badge>}
+          description="Stored in this browser on this device, and copied to your other devices when sync is set up. Export regularly as well — sync copies mistakes too."
+          control={<Badge color="var(--c-text-muted)">IndexedDB</Badge>}
         />
       </Group>
 
@@ -900,7 +955,7 @@ function DataSection() {
         </p>
         <Row
           label="Clear all data"
-          description="Permanently erases every goal, task, habit, note, journal entry and log in this browser, and forgets any API key stored in it. Life OS restarts at setup. You stay signed in."
+          description="Permanently erases every goal, task, habit, note, journal entry and log, and forgets any API key stored in this browser. With sync set up, the data is erased on your other devices too. Life OS restarts at setup. You stay signed in."
           control={
             <Button
               variant="danger"
@@ -908,8 +963,8 @@ function DataSection() {
               onClick={() =>
                 confirm({
                   title: 'Clear all data?',
-                  body: 'This permanently erases everything in Life OS on this device.',
-                  note: 'There is no cloud backup and no undo. Export first if you want a copy.',
+                  body: 'This permanently erases everything in Life OS, on this device and on every synced device.',
+                  note: 'There is no undo. Export first if you want a copy.',
                   actionLabel: 'Clear everything',
                   danger: true,
                   onConfirm: async () => {
@@ -1018,7 +1073,7 @@ function AboutSection() {
         <Row label="Version" control={<span className="mono">1.0.0</span>} />
         <Row
           label="Architecture"
-          description="Single owner. Your data is stored on this device, never on a server, and leaves it only when you export it. The server only checks your sign-in and relays AI coach requests."
+          description="Single owner. Your data is stored on this device, and, once sync is set up, in your own sync database behind your sign-in so your devices stay in step. The server checks your sign-in, syncs your data and relays AI coach requests."
           control={<Badge color="var(--c-text-muted)">Local data</Badge>}
         />
         <Row

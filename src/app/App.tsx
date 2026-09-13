@@ -27,6 +27,8 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { useHotkey, useSettings, useStoreStatus, useViewport } from './hooks';
 import { store } from '../data/store';
 import { updateSettings } from '../data/actions';
+import { startSync } from '../data/sync';
+import { goToLogin } from './session';
 import { ConfirmProvider, ToastProvider } from '../ui/overlays';
 import { ErrorState, ScreenSkeleton } from '../ui/primitives';
 import { messageForCode, type AppError } from '../data/errors';
@@ -81,6 +83,8 @@ function Boot() {
   useEffect(() => {
     void store.hydrate();
   }, [retryKey]);
+
+  useEffect(() => (status === 'ready' ? startSync({ onUnauthenticated: goToLogin }) : undefined), [status]);
 
   if (status === 'error') {
     return (

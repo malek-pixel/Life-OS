@@ -107,6 +107,11 @@ function serialized<Args extends unknown[], R>(
   };
 }
 
+/** Runs `fn` in the write queue. Sync uses it so remote rows never interleave with an action. */
+export function runExclusive<R>(fn: () => Promise<R>): Promise<R> {
+  return serialized(fn)();
+}
+
 /* ================================================================== *
  * Transaction helper
  * ================================================================== */

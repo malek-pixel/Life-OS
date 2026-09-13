@@ -569,3 +569,35 @@ vector definition in `scripts/make-icons.js`.
 - **Physical iPhone not tested.** Verified in browser emulation at iPhone widths
   with touch pointers. Standalone launch, the on-screen keyboard and Keychain
   autofill need a check on the device itself.
+
+## 14. Cross-device sync
+
+**Amends §13 ("no database, no sync") at the owner's request**, after using the
+app on a laptop and an iPhone and finding two separate copies of their data.
+
+- **Local-first stays.** IndexedDB is still the working copy on every device and
+  the app still works offline. Sync is a background reconciliation, not a
+  server round trip per action.
+- **Storage:** Upstash Redis (Vercel Storage), read through `KV_REST_API_URL` /
+  `KV_REST_API_TOKEN` or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`.
+  Without them `/api/sync` answers `sync_not_configured` and every device keeps
+  working alone, exactly as before.
+- **Unit of sync is the row.** Each device records changed rows in an outbox
+  in the same IndexedDB transaction as the change, pushes them, and pulls rows
+  changed since a server sequence cursor. Conflicts: newest change time wins per
+  row. Hard deletes travel as tombstones; soft deletes are ordinary updates.
+- **Joining.** A device's first sync pulls everything first, and the server copy
+  wins for any row both have (settings, the character rollup), so a new phone's
+  defaults cannot overwrite the laptop's real settings. Its other rows upload.
+- **XP.** The ledger rows sync; the cached rollup is rebuilt from the ledger
+  whenever XP events arrive from another device.
+- **Clear all / import** now apply to every synced device.
+- **Security.** `/api/sync` checks the session itself as well as the gate, and
+  refuses cross-site writes. The data is now stored on the server (Upstash,
+  encrypted at rest by the provider, behind the Redis token that only the
+  server holds) — a deliberate change from "the server holds no user data".
+
+**Limits.** Last-writer-wins is per row, not per field: editing the same note on
+two offline devices keeps the later edit only. Achievement unlocks earned on two
+devices at once can both arrive. Device clocks decide order, so a badly wrong
+clock can lose an edit.

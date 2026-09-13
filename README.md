@@ -6,9 +6,10 @@ analytics and an AI coach — as one connected system rather than twelve separat
 tools.
 
 **Single owner. Private. Local-first data.** Deployed, the app sits behind a
-server-enforced sign-in. Your data lives in the browser on your device and is
-never stored on the server, which only checks your sign-in and relays AI coach
-requests with a key the browser never sees.
+server-enforced sign-in. Each device keeps a full working copy in the browser
+and works offline; with sync set up, devices stay in step through a Redis
+database only your server can reach. The server also relays AI coach requests
+with a key the browser never sees.
 
 ---
 
@@ -51,11 +52,15 @@ host or straight off the filesystem with no server-side route configuration.
 3. **Add environment variables** (Project → Settings → Environment Variables,
    Production): `LIFEOS_PASSWORD_HASH` and `LIFEOS_SESSION_SECRET` from step 1,
    and optionally `GROQ_API_KEY` for the coach. See `.env.example`.
+   For sync between devices: Project → **Storage** → Create Database →
+   **Upstash (Redis)** → connect it to this project. That adds its environment
+   variables automatically.
 4. **Deploy.** Open the URL: you should see only the sign-in page.
 5. **iPhone:** open the URL in Safari → Share → Add to Home Screen, then open
    Life OS from the Home Screen and sign in there. iOS keeps Home Screen storage
-   separate from Safari, so use the Home Screen app for your data, or move data
-   with Settings → Data → Export / Import.
+   separate from Safari; with sync set up, both get the same data. Open the app
+   on the computer that has your data first, so it uploads before the phone joins.
+   Settings → Data → Sync shows the state.
 
 To run the production build with authentication locally, put the three
 variables in a git-ignored `.env` file, run `npm run build`, then:
@@ -76,8 +81,8 @@ UI (React screens)
               └── store (reactive in-memory mirror)
                     └── IndexedDB (authoritative storage)
 
-  server/ ── sign-in gate (every request) + AI proxy holding the Groq key.
-             Stores no user data.
+  server/ ── sign-in gate (every request), AI proxy holding the Groq key,
+             and /api/sync (row-level, newest change wins; Upstash Redis).
 ```
 
 ### The rules that shape it
@@ -128,16 +133,16 @@ src/
 
 ## Data and privacy
 
-Your data is stored on your device, never on the server. It leaves the device
-only when you export it, or in an AI coach request you send. Fonts are
+Your data is stored on your device and, when sync is set up, in your own Upstash
+database, reachable only through your signed-in server. See
+[`docs/DECISIONS.md`](docs/DECISIONS.md) §14. Fonts are
 self-hosted, so the app makes no third-party requests.
 
 - **Export** (Settings → Data) writes every table to JSON, including AI memory
   and usage logs, so "what does this app know about me" is always answerable.
   The API key is deliberately excluded.
 - **Import** replaces everything, after showing you exactly what is in the file.
-- **There is no cloud backup.** One browser profile holds the only copy. Export
-  regularly — this is the single biggest risk in the whole design.
+- **Sync is not a backup.** A deletion or a mistake syncs too. Export regularly.
 
 ### AI
 
@@ -171,7 +176,7 @@ bundles.
 npm test
 ```
 
-Six suites, 167 tests, covering what silently corrupts data if wrong:
+Seven suites, 183 tests, covering what silently corrupts data if wrong:
 
 - **`test/domain.test.ts`** — the pure logic. Streak calculation including
   protections, custom schedules, weekly targets and the rule that an unlogged
@@ -193,6 +198,10 @@ Six suites, 167 tests, covering what silently corrupts data if wrong:
 - **`test/server.test.ts`** — the access layer, mostly as attacks: forged,
   tampered, expired and revoked sessions; cross-site requests; path tricks; brute
   force; a misconfigured deployment; and the AI proxy refusing without a session.
+- **`test/sync.test.ts`** — the sync endpoint (sessions, cross-site writes,
+  malformed rows, newest-wins, paging) and the client engine against it: first
+  upload, a new device joining, local-vs-remote conflicts, deletions, XP rebuild
+  and clear-all propagation.
 - **`test/actions.test.ts`** — the action layer against a real IndexedDB
   (`fake-indexeddb`), covering the end-to-end flows: goal → project → task →
   complete → progress and XP propagate; habit → streak → XP; recurrence spawning
