@@ -515,3 +515,60 @@ describe('persistence', () => {
     expect(store.character.totalXp).toBe(0);
   });
 });
+
+describe('concurrent actions', () => {
+  /*
+   * Found by clicking a checkbox five times quickly in the browser. Actions read
+   * state from memory and then await their commit, so concurrent calls all read
+   * the pre-commit state: five XP awards for one task, and a cached total that
+   * disagreed with the ledger. Actions are now serialized.
+   */
+  const ledgerSum = () => store.live('xpEvents').reduce((sum, e) => sum + e.amount, 0);
+
+  it('awards a task exactly once however many times completion is fired', async () => {
+    await createTask({ title: 'First, to spend First Blood' }).then((r) => completeTask(r.createdIds[0]!));
+    const { createdIds } = await createTask({ title: 'Clicked five times' });
+    const id = createdIds[0]!;
+    const before = store.character.totalXp;
+
+    await Promise.all([1, 2, 3, 4, 5].map(() => completeTask(id)));
+
+    const awards = store.live('xpEvents').filter((e) => e.sourceId === id);
+    expect(awards).toHaveLength(1);
+    expect(store.character.totalXp - before).toBe(awards[0]!.amount);
+    expect(store.character.totalXp).toBe(ledgerSum());
+  });
+
+  it('does not lose updates when different actions race', async () => {
+    const ids = await Promise.all(
+      [1, 2, 3, 4, 5, 6].map((n) => createTask({ title: `Task ${n}` }).then((r) => r.createdIds[0]!)),
+    );
+    expect(new Set(ids).size).toBe(6);
+
+    await Promise.all(ids.map((id) => completeTask(id)));
+
+    // Every completion is counted in the cache, not just the last writer's.
+    expect(store.character.totalXp).toBe(ledgerSum());
+    expect(store.live('tasks').filter((t) => t.status === 'COMPLETED')).toHaveLength(6);
+  });
+
+  it('keeps the ledger and cache in step when complete and undo interleave', async () => {
+    const { createdIds } = await createTask({ title: 'Toggled' });
+    const id = createdIds[0]!;
+
+    await Promise.all([completeTask(id), uncompleteTask(id), completeTask(id), uncompleteTask(id)]);
+
+    expect(store.byId('tasks', id)!.status).toBe('TODO');
+    expect(store.character.totalXp).toBe(ledgerSum());
+    // Net zero for this task: every award has its reversal.
+    const net = store.live('xpEvents').filter((e) => e.sourceId === id).reduce((s, e) => s + e.amount, 0);
+    expect(net).toBe(0);
+  });
+
+  it('keeps accepting writes after an action fails', async () => {
+    await expect(completeTask('no-such-task')).rejects.toThrow();
+    const { createdIds } = await createTask({ title: 'After a failure' });
+    await completeTask(createdIds[0]!);
+    expect(store.byId('tasks', createdIds[0]!)!.status).toBe('COMPLETED');
+  });
+});

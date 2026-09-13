@@ -689,7 +689,7 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="spread" style={{ marginBottom: 18, alignItems: 'flex-start' }}>
+    <header className="spread page-header" style={{ marginBottom: 18, alignItems: 'flex-start' }}>
       <div className="grow">
         <h1 style={{ fontSize: 'var(--fs-5xl)', fontWeight: 600, margin: 0, lineHeight: 1.2 }}>
           {title}

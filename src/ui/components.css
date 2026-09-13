@@ -324,6 +324,18 @@
   color: transparent;
   padding: 0;
   transition: background-color var(--m-fast) ease, border-color var(--m-fast) ease, transform var(--m-micro) var(--ease-press);
+  position: relative;
+}
+/*
+ * The box is drawn at the design's 19px, but that is below the 24px minimum
+ * target size (WCAG 2.2, 2.5.8) - the completion control is the one people hit
+ * most often, frequently on a touch screen. An invisible halo extends the
+ * clickable area to 31px without changing how the checkbox looks.
+ */
+.checkbox::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 .checkbox:hover:not(:disabled) {
   border-color: var(--c-accent-text);
@@ -888,4 +900,70 @@
 @keyframes losNavDrawerIn {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(0); }
+}
+
+/* ================================================================== *
+ * Narrow windows
+ *
+ * The approved design is desktop-only (UI/UX section 40). These rules exist
+ * because a browser window can be narrow anyway, and several screens were
+ * clipping content past the right edge at phone widths. Each is scoped to the
+ * width where it was actually breaking, so the desktop layout is untouched.
+ * ================================================================== */
+
+/* Settings: section menu and panel side by side is 210px + a panel, which
+   crushed each row's text to one word per line below tablet width. */
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 210px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 820px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  /* A setting's control drops beneath its description instead of pushing
+     inputs and button pairs off the edge of the card. */
+  .settings-row {
+    flex-wrap: wrap;
+  }
+  .settings-row-control {
+    flex: 1 1 100% !important;
+  }
+  .settings-row-control .input {
+    width: 100%;
+  }
+
+  /* Page actions wrap under the title rather than overflowing beside it. */
+  .page-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  /* The top bar keeps the search affordance as an icon; the label and
+     shortcut hint are what pushed Capture off-screen. The button carries an
+     aria-label, so hiding the text does not unname it. */
+  .topbar-search {
+    min-width: 0 !important;
+  }
+  .topbar-search-label {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  /* Filter tabs plus a primary action is wider than a phone; let them wrap. */
+  .page-header > .row {
+    flex-wrap: wrap;
+  }
+  /* Calendar's navigation, month heading and colour legend share one line on
+     desktop; the legend drops to its own line on a phone. */
+  .calendar-toolbar {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
 }

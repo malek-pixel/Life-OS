@@ -43,6 +43,8 @@ async function freshDb(): Promise<void> {
 beforeEach(freshDb);
 
 /** Midday, so quiet hours never interfere with the non-quiet-hours tests. */
+// Every due date below is expressed relative to this, never to Date.now():
+// mixing the two made the suite pass or fail depending on the day it ran.
 const MIDDAY = new Date(2026, 8, 12, 12, 0).getTime();
 
 describe('in-app reminders', () => {
@@ -81,7 +83,7 @@ describe('in-app reminders', () => {
   });
 
   it('warns about overdue tasks, and respects the deadlineWarnings setting', async () => {
-    await createTask({ title: 'Late thing', dueAt: Date.now() - 86_400_000 * 2 });
+    await createTask({ title: 'Late thing', dueAt: MIDDAY - 86_400_000 * 2 });
 
     expect(selectNudges(MIDDAY).some((n) => n.kind === 'overdue')).toBe(true);
 
@@ -99,7 +101,7 @@ describe('in-app reminders', () => {
   });
 
   it('suppresses everything during quiet hours, and only when enabled', async () => {
-    await createTask({ title: 'Late thing', dueAt: Date.now() - 86_400_000 });
+    await createTask({ title: 'Late thing', dueAt: MIDDAY - 86_400_000 });
     const lateNight = new Date(2026, 8, 12, 23, 30).getTime();
     const earlyMorning = new Date(2026, 8, 12, 6, 0).getTime();
 
@@ -132,7 +134,7 @@ describe('in-app reminders', () => {
 
   it('orders the most urgent reminder first', async () => {
     await createHabit({ title: 'H', startDate: Date.now() - 86_400_000 * 3 });
-    await createTask({ title: 'Late thing', dueAt: Date.now() - 86_400_000 });
+    await createTask({ title: 'Late thing', dueAt: MIDDAY - 86_400_000 });
 
     const nudges = selectNudges(MIDDAY);
     // Overdue work outranks an unlogged habit.
@@ -205,5 +207,55 @@ describe('export and import', () => {
     expect(preview.counts.goals).toBe(1);
     expect(preview.warnings.join(' ')).toContain('no id');
     expect(preview.warnings.join(' ')).toContain('notARealTable');
+  });
+});
+
+describe('clear all data', () => {
+  /*
+   * clearAllData awaited each store's clear in turn inside one transaction, so
+   * the transaction could commit after the first and leave the rest intact.
+   * Every store must be empty afterwards, and a reload must not resurrect rows.
+   */
+  it('empties every store and returns the app to a first-run state', async () => {
+    await createGoal({ title: 'Should vanish' });
+    await createTask({ title: 'Also gone', dueAt: Date.now() });
+    const habit = await createHabit({ title: 'H', startDate: Date.now() - 86_400_000 });
+    await toggleHabitLog(habit.createdIds[0]!, today());
+    await updateSettings({ onboardingCompletedAt: Date.now() });
+    expect(store.live('xpEvents').length).toBeGreaterThan(0);
+
+    await store.clearAll();
+
+    // Read back from disk, not memory.
+    store._resetForTests();
+    resetDbHandle();
+    await store.hydrate();
+
+    expect(store.live('goals')).toHaveLength(0);
+    expect(store.live('tasks')).toHaveLength(0);
+    expect(store.live('habits')).toHaveLength(0);
+    expect(store.live('habitLogs')).toHaveLength(0);
+    expect(store.live('xpEvents')).toHaveLength(0);
+    const character = store.live('characterState')[0]!;
+    expect(character.totalXp).toBe(0);
+    // Onboarding is reset, so a cleared install behaves like a new one.
+    expect(store.live('settings')[0]!.onboardingCompletedAt).toBeNull();
+  });
+});
+
+describe('malformed rows', () => {
+  it('search tolerates an imported row that is missing its text fields', async () => {
+    await createGoal({ title: 'Findable goal' });
+    // What a hand-edited or older export can contain: an id, and little else.
+    await store.replaceAll({
+      ...Object.fromEntries(Object.entries(buildExport().data)),
+      notes: [{ id: 'broken-note', deletedAt: null }],
+      tasks: [{ id: 'broken-task', deletedAt: null, title: 'Half a task' }],
+    } as never);
+
+    const { search } = await import('../src/domain/selectors');
+    expect(() => search('goal')).not.toThrow();
+    expect(search('findable').map((h) => h.title)).toContain('Findable goal');
+    expect(search('half').map((h) => h.title)).toContain('Half a task');
   });
 });

@@ -27,6 +27,7 @@ import { Button, IconButton, cx } from './primitives';
 import { Icon, type IconName } from './Icon';
 import { useFieldId, useFocusTrap } from '../app/hooks';
 import { motion, motionMs } from '../design/tokens';
+import { messageForCode, toAppError } from '../data/errors';
 
 /* ================================================================== *
  * Shared shell
@@ -350,6 +351,26 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       map.clear();
     };
   }, []);
+
+  /*
+   * Safety net for failures nobody caught.
+   *
+   * Several click handlers await a write without a try/catch. When that write
+   * failed - storage full, the database blocked by another tab - the promise
+   * rejected into the void and the user saw nothing, which reads as the click
+   * having worked. Any unhandled rejection now surfaces as a persistent error
+   * toast. The message goes through toAppError, so it is the user-facing text
+   * for that failure rather than a raw exception. Handlers that already catch
+   * their own errors never reach this.
+   */
+  useEffect(() => {
+    const onRejection = (event: PromiseRejectionEvent) => {
+      const error = toAppError(event.reason);
+      showError(error.message || messageForCode(error.code));
+    };
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => window.removeEventListener('unhandledrejection', onRejection);
+  }, [showError]);
 
   const api = useMemo(() => ({ show, showError, dismiss }), [show, showError, dismiss]);
 

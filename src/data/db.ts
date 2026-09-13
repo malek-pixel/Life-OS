@@ -236,10 +236,18 @@ export async function getOne<T>(store: StoreName, id: string): Promise<T | undef
   return transact(store, 'readonly', (tx) => txGet<T>(tx, store, id));
 }
 
-/** Wipes every store. Used by Settings > Danger zone, behind a confirmation. */
+/**
+ * Wipes every store. Used by Settings > Danger zone, behind a confirmation.
+ *
+ * Every clear is issued before the first await, for the reason given at the top
+ * of this file: an IndexedDB transaction commits as soon as its request queue
+ * drains. Awaiting each clear in turn let the transaction close after the first
+ * one, so most of the twenty-five stores were never cleared and "clear all data"
+ * quietly left the data behind.
+ */
 export async function clearAllData(): Promise<void> {
   const names = Object.values(STORES) as StoreName[];
   await transact(names, 'readwrite', async (tx) => {
-    for (const name of names) await txClear(tx, name);
+    await Promise.all(names.map((name) => txClear(tx, name)));
   });
 }

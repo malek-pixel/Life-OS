@@ -354,3 +354,115 @@ CSS collapses every duration from both the OS setting and the in-app one. That
 reaches nothing JS-driven, so `usePrefersReducedMotion` watches the media query
 *and* the `data-reduce-motion` attribute, and the count-up returns its target
 immediately rather than animating. Verified in the browser both ways.
+
+## 12. Production-completion audit
+
+A twelve-phase audit of the running product - not just the code - against the
+design, the Dev Master, the Tech Spec and this document. Nothing below adds
+product surface; each item was either broken, silently wrong, or missing from
+an approved requirement.
+
+### Data integrity
+
+- **Concurrent actions corrupted the XP ledger.** Every action reads current
+  state from memory, decides what to write, then awaits its IndexedDB commit.
+  Nothing ordered actions against each other, so five rapid clicks on one
+  checkbox all read an open task and all awarded XP. Five ledger events, one
+  cached increment, and the cache no longer matched the ledger. The same race
+  lost XP when two *different* tasks completed close together. Every exported
+  action now runs through a single serial write queue in `actions.ts`, so an
+  action reads state only after the previous one has committed. A single
+  transaction was always atomic; now transactions are also ordered. Covered by
+  tests that fail without the queue.
+- **"Clear all data" could leave data behind.** `clearAllData` awaited each
+  store's clear inside one transaction - the same auto-commit defect fixed in §9
+  for `hydrate` and `persist`, missed here. It now issues every clear before the
+  first await.
+- **Search crashed on a malformed row.** Import only checks rows for an `id`, so
+  an older or hand-edited export with a note missing its `content` crashed
+  search, and the command palette with it. Search now coerces text fields.
+- A reminder test mixed `Date.now()` with a fixed clock and passed or failed
+  depending on the day it ran. All its dates are now relative to the fixed clock.
+
+### Clean install
+
+There is no seed, demo or fixture path anywhere in `src/`. A fresh browser
+profile holds exactly two rows - the settings and character singletons - and
+opens at setup. Verified in a new profile, through onboarding, the first task,
+habit and goal, and a hard reload.
+
+The development data from earlier sessions only ever lived in one local browser
+profile and cannot ship: the build contains no data, and IndexedDB is per-origin
+and per-profile. For anyone with such a profile, **Settings → Data → Clear all
+data** is the clean reset. It now also forgets the API key: the key lives in
+browser storage rather than IndexedDB, so the wipe did not reach it, leaving a
+credential behind after "clear everything".
+
+### Error recovery
+
+- A write that failed inside a click handler with no `try/catch` became an
+  unhandled rejection and the user saw nothing - which reads as success. Eight
+  handlers were like this. `ToastProvider` now turns any unhandled rejection into
+  a persistent error toast, with the user-facing message from `toAppError`, never
+  the raw exception. Verified that internal error text does not leak.
+- Rapid repeated clicks on a task checkbox or the task panel's Complete button
+  produced a stack of duplicate toasts. Both are guarded now. The data was already
+  protected by the write queue.
+- The AI coach had no timeout: a hung connection spun until someone noticed Stop.
+  Turns are now abandoned after 60 seconds, with a message that distinguishes a
+  timeout from a cancellation. Leaving the screen mid-request also aborts it;
+  previously the request and its tool loop kept spending API quota.
+
+### Performance at realistic scale
+
+`test/scale.test.ts` loads a heavy year of data - 3,000 tasks, 40 habits logged
+daily for a year, 500 notes, a ledger of over 10,000 events - and times every
+screen's selector *after a write*, which is the moment that matters.
+`selectHabits` (streaks walk each habit's history) was about 150ms and the
+dashboard called it twice, so each checkbox click cost about 300ms. It is now
+memoized on the store version and called once. For that cache key to be safe,
+the store version is never reset, not even by the test seam. Every other
+selector is well under budget.
+
+### Responsive
+
+The design is desktop-only (UI/UX §40), but at phone width several screens
+clipped content past the right edge. **Settings** kept its menu and panel side
+by side and crushed each row to one word per line. **Projects'** and
+**Calendar's** headers overflowed, and the top bar pushed Capture off-screen.
+Each fix is a media query scoped to where it broke, so the desktop layout is
+unchanged. A sweep of every route at 375, 430 and 768px now finds no clipped
+content and no horizontal overflow. The task checkbox, drawn at 19px, has an
+invisible halo taking its target to 31px (WCAG 2.2, 2.5.8).
+
+### Accessibility
+
+A sweep of all 23 routes found one unnamed control: the hidden file input behind
+**Import**, which was still in the tab order. It is removed from the tab order
+and named.
+
+### Production
+
+- Favicon (inline SVG, so no request and no `/favicon.ico` 404), description,
+  `theme-color`, `robots: noindex` (a single-user local app has nothing to index),
+  and a `<noscript>` explanation.
+- Page titles follow the route ("Tasks · Life OS"), from the same source as the
+  breadcrumb, so history entries and bookmarks identify the screen.
+- Verified: no source maps in `dist/`, no key-shaped strings in the bundle, no
+  `.env` ever committed, and the only `VITE_` variable is a non-secret endpoint
+  override. `.env.example` described the key as stored in localStorage; corrected.
+- Deep-link refresh works on any static host because routing is hash-based (§1).
+
+### Known limitations, not fixable within this architecture
+
+- **The API key is readable by any script on the page.** See §6. Only a server
+  holding the key would fix this.
+- **Google Fonts is a third-party request.** No user data is sent, but it tells
+  Google the app was opened, and offline the fonts fall back to the system stack.
+  Self-hosting the two families would remove the request. That is a
+  dependency/asset change rather than a defect, so it is listed as future work.
+- **One browser profile holds the only copy of the data.** No sync and no backup
+  by design; Export is the mitigation.
+- **Duplicate XP events already written by the concurrency bug stay in the
+  ledger.** It is append-only by design. Settings → Data → Rebuild realigns the
+  cached total with the ledger, and was verified doing exactly that.

@@ -83,7 +83,10 @@ export function TopBar({
         <button
           type="button"
           onClick={onOpenPalette}
-          className="los-press"
+          className="los-press topbar-search"
+          // Named explicitly: on a narrow window the visible text is hidden and
+          // only the icon remains, which would otherwise leave it unnamed.
+          aria-label="Search or run a command"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -100,11 +103,11 @@ export function TopBar({
           }}
         >
           <Icon name="search" size={14} />
-          <span className="grow" style={{ textAlign: 'left' }}>
+          <span className="grow topbar-search-label" style={{ textAlign: 'left' }}>
             Search or run a command
           </span>
           <kbd
-            className="mono"
+            className="mono topbar-search-label"
             style={{
               fontSize: 'var(--fs-3xs)',
               color: 'var(--c-text-ghost)',
@@ -137,7 +140,9 @@ interface Crumb {
  * the entity name itself is filled in by the detail screen's own heading, so
  * this stays a cheap pure function rather than a store read.
  */
-function breadcrumbFor(pathname: string): Crumb[] {
+/** Route to breadcrumb trail. Exported so the document title uses the same
+ *  source as the visible breadcrumb rather than a second list that can drift. */
+export function breadcrumbFor(pathname: string): Crumb[] {
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 0) return [{ label: 'Dashboard' }];
 

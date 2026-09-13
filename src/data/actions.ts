@@ -72,6 +72,42 @@ import {
 } from '../domain/achievements';
 
 /* ================================================================== *
+ * Write serialization
+ * ================================================================== */
+
+/**
+ * Every action runs one at a time, in the order it was called.
+ *
+ * Each action reads current state from the in-memory store, decides what to
+ * write, then awaits the IndexedDB commit. Run concurrently, two actions both
+ * read the state from *before* either commit - so five rapid clicks on one
+ * checkbox all saw an open task, all awarded XP, and all computed the cached
+ * total from the same starting value. The ledger gained five events while
+ * CharacterState recorded one, and the two stopped agreeing.
+ *
+ * A single transaction is atomic, but nothing ordered transactions against
+ * each other. This queue does: an action only starts once the previous one has
+ * committed and been applied to memory, so its reads are always current.
+ *
+ * A failed action rejects its own caller and does not block the queue.
+ * Actions must not call exported actions (they would wait on themselves); an
+ * action that needs another one calls its `...Impl` directly.
+ */
+let writeQueue: Promise<unknown> = Promise.resolve();
+
+function serialized<Args extends unknown[], R>(
+  fn: (...args: Args) => Promise<R>,
+): (...args: Args) => Promise<R> {
+  return (...args: Args) => {
+    const run = writeQueue.then(() => fn(...args));
+    // The queue itself must never reject, or one failure would stall every
+    // write after it.
+    writeQueue = run.catch(() => undefined);
+    return run;
+  };
+}
+
+/* ================================================================== *
  * Transaction helper
  * ================================================================== */
 
@@ -435,7 +471,7 @@ function validateTask(input: TaskInput, existingId?: string): Omit<Task, keyof R
   };
 }
 
-export async function createTask(input: TaskInput): Promise<ActionResult> {
+async function createTaskImpl(input: TaskInput): Promise<ActionResult> {
   const fields = validateTask(input);
   const tx = new Tx();
   tx.create('tasks', {
@@ -447,7 +483,7 @@ export async function createTask(input: TaskInput): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function updateTask(id: string, input: TaskInput): Promise<ActionResult> {
+async function updateTaskImpl(id: string, input: TaskInput): Promise<ActionResult> {
   const existing = requireRow('tasks', id, 'task');
   const fields = validateTask(input, id);
   const tx = new Tx();
@@ -461,7 +497,7 @@ export async function updateTask(id: string, input: TaskInput): Promise<ActionRe
  * Recurring tasks spawn their next instance here rather than mutating the
  * completed row, so history keeps one row per actual occurrence.
  */
-export async function completeTask(id: string): Promise<ActionResult> {
+async function completeTaskImpl(id: string): Promise<ActionResult> {
   const task = requireRow('tasks', id, 'task');
   if (task.status === 'COMPLETED') return { ...EMPTY_RESULT };
 
@@ -498,7 +534,7 @@ export async function completeTask(id: string): Promise<ActionResult> {
 }
 
 /** Reverses a completion, including its XP. The undo path for the checkbox. */
-export async function uncompleteTask(id: string): Promise<ActionResult> {
+async function uncompleteTaskImpl(id: string): Promise<ActionResult> {
   const task = requireRow('tasks', id, 'task');
   if (task.status !== 'COMPLETED') return { ...EMPTY_RESULT };
 
@@ -508,10 +544,10 @@ export async function uncompleteTask(id: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function setTaskStatus(id: string, status: Task['status']): Promise<ActionResult> {
-  if (status === 'COMPLETED') return completeTask(id);
+async function setTaskStatusImpl(id: string, status: Task['status']): Promise<ActionResult> {
+  if (status === 'COMPLETED') return completeTaskImpl(id);
   const task = requireRow('tasks', id, 'task');
-  if (task.status === 'COMPLETED') return uncompleteTask(id);
+  if (task.status === 'COMPLETED') return uncompleteTaskImpl(id);
 
   const tx = new Tx();
   tx.put('tasks', touch({ ...task, status }));
@@ -524,7 +560,7 @@ export async function setTaskStatus(id: string, status: Task['status']): Promise
  * Development Master section 34 forbids silently destroying user data: the rows
  * are marked, not removed, so `restoreTask` can bring them back.
  */
-export async function deleteTask(id: string): Promise<ActionResult> {
+async function deleteTaskImpl(id: string): Promise<ActionResult> {
   const task = requireRow('tasks', id, 'task');
   const tx = new Tx();
   const now = Date.now();
@@ -549,7 +585,7 @@ export async function deleteTask(id: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function restoreTask(id: string): Promise<ActionResult> {
+async function restoreTaskImpl(id: string): Promise<ActionResult> {
   const task = store.byId('tasks', id);
   if (!task) throw new NotFoundError('task', id);
   const tx = new Tx();
@@ -626,14 +662,14 @@ function validateGoal(input: GoalInput) {
   };
 }
 
-export async function createGoal(input: GoalInput): Promise<ActionResult> {
+async function createGoalImpl(input: GoalInput): Promise<ActionResult> {
   const fields = validateGoal(input);
   const tx = new Tx();
   tx.create('goals', { id: newId(), ...stamps(), ...fields, completedAt: null });
   return tx.commit();
 }
 
-export async function updateGoal(id: string, input: GoalInput): Promise<ActionResult> {
+async function updateGoalImpl(id: string, input: GoalInput): Promise<ActionResult> {
   const existing = requireRow('goals', id, 'goal');
   const fields = validateGoal(input);
   const tx = new Tx();
@@ -641,7 +677,7 @@ export async function updateGoal(id: string, input: GoalInput): Promise<ActionRe
   return tx.commit();
 }
 
-export async function completeGoal(id: string): Promise<ActionResult> {
+async function completeGoalImpl(id: string): Promise<ActionResult> {
   const goal = requireRow('goals', id, 'goal');
   if (goal.status === 'COMPLETED') return { ...EMPTY_RESULT };
   const tx = new Tx();
@@ -651,7 +687,7 @@ export async function completeGoal(id: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function reopenGoal(id: string): Promise<ActionResult> {
+async function reopenGoalImpl(id: string): Promise<ActionResult> {
   const goal = requireRow('goals', id, 'goal');
   if (goal.status !== 'COMPLETED') return { ...EMPTY_RESULT };
   const tx = new Tx();
@@ -660,7 +696,7 @@ export async function reopenGoal(id: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function archiveGoal(id: string): Promise<ActionResult> {
+async function archiveGoalImpl(id: string): Promise<ActionResult> {
   const goal = requireRow('goals', id, 'goal');
   const tx = new Tx();
   tx.put('goals', touch({ ...goal, status: 'ARCHIVED' }));
@@ -673,7 +709,7 @@ export async function archiveGoal(id: string): Promise<ActionResult> {
  * Deleting a goal must not silently take a year of tasks with it, so projects
  * and tasks are unlinked and survive on their own.
  */
-export async function deleteGoal(id: string): Promise<ActionResult> {
+async function deleteGoalImpl(id: string): Promise<ActionResult> {
   const goal = requireRow('goals', id, 'goal');
   const tx = new Tx();
   const now = Date.now();
@@ -742,14 +778,14 @@ function validateProject(input: ProjectInput) {
   };
 }
 
-export async function createProject(input: ProjectInput): Promise<ActionResult> {
+async function createProjectImpl(input: ProjectInput): Promise<ActionResult> {
   const fields = validateProject(input);
   const tx = new Tx();
   tx.create('projects', { id: newId(), ...stamps(), ...fields, completedAt: null });
   return tx.commit();
 }
 
-export async function updateProject(id: string, input: ProjectInput): Promise<ActionResult> {
+async function updateProjectImpl(id: string, input: ProjectInput): Promise<ActionResult> {
   const existing = requireRow('projects', id, 'project');
   const fields = validateProject(input);
   const tx = new Tx();
@@ -757,7 +793,7 @@ export async function updateProject(id: string, input: ProjectInput): Promise<Ac
   return tx.commit();
 }
 
-export async function completeProject(id: string): Promise<ActionResult> {
+async function completeProjectImpl(id: string): Promise<ActionResult> {
   const project = requireRow('projects', id, 'project');
   if (project.status === 'COMPLETED') return { ...EMPTY_RESULT };
   const tx = new Tx();
@@ -767,7 +803,7 @@ export async function completeProject(id: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function deleteProject(id: string): Promise<ActionResult> {
+async function deleteProjectImpl(id: string): Promise<ActionResult> {
   const project = requireRow('projects', id, 'project');
   const tx = new Tx();
   const now = Date.now();
@@ -784,7 +820,7 @@ export async function deleteProject(id: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function createMilestone(
+async function createMilestoneImpl(
   projectId: string,
   input: { title: string; description?: string; targetDate?: number | null },
 ): Promise<ActionResult> {
@@ -811,7 +847,7 @@ export async function createMilestone(
   return tx.commit();
 }
 
-export async function toggleMilestone(id: string): Promise<ActionResult> {
+async function toggleMilestoneImpl(id: string): Promise<ActionResult> {
   const milestone = requireRow('milestones', id, 'milestone');
   const project = store.byId('projects', milestone.projectId);
   const tx = new Tx();
@@ -827,7 +863,7 @@ export async function toggleMilestone(id: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function deleteMilestone(id: string): Promise<ActionResult> {
+async function deleteMilestoneImpl(id: string): Promise<ActionResult> {
   const milestone = requireRow('milestones', id, 'milestone');
   const tx = new Tx();
   const now = Date.now();
@@ -900,14 +936,14 @@ function validateHabit(input: HabitInput) {
   };
 }
 
-export async function createHabit(input: HabitInput): Promise<ActionResult> {
+async function createHabitImpl(input: HabitInput): Promise<ActionResult> {
   const fields = validateHabit(input);
   const tx = new Tx();
   tx.create('habits', { id: newId(), ...stamps(), ...fields, status: 'ACTIVE' });
   return tx.commit();
 }
 
-export async function updateHabit(id: string, input: HabitInput): Promise<ActionResult> {
+async function updateHabitImpl(id: string, input: HabitInput): Promise<ActionResult> {
   const existing = requireRow('habits', id, 'habit');
   const fields = validateHabit(input);
   const tx = new Tx();
@@ -921,7 +957,7 @@ export async function updateHabit(id: string, input: HabitInput): Promise<Action
  * XP is priced off the streak as it stood *before* this completion, so day one
  * of a new streak pays the base rate and the bonus grows honestly from there.
  */
-export async function toggleHabitLog(
+async function toggleHabitLogImpl(
   habitId: string,
   day: DayKey = todayKey(),
   value: number | null = null,
@@ -965,7 +1001,7 @@ export async function toggleHabitLog(
  * No XP: a protected day keeps the streak alive but was not actually done, and
  * paying for it would make the ledger a lie.
  */
-export async function protectHabitDay(habitId: string, day: DayKey): Promise<ActionResult> {
+async function protectHabitDayImpl(habitId: string, day: DayKey): Promise<ActionResult> {
   const habit = requireRow('habits', habitId, 'habit');
   const logs = store.live('habitLogs').filter((l) => l.habitId === habitId);
   const used = logs.filter((l) => l.protected).length;
@@ -994,7 +1030,7 @@ export async function protectHabitDay(habitId: string, day: DayKey): Promise<Act
   return tx.commit();
 }
 
-export async function setHabitStatus(id: string, status: Habit['status']): Promise<ActionResult> {
+async function setHabitStatusImpl(id: string, status: Habit['status']): Promise<ActionResult> {
   const habit = requireRow('habits', id, 'habit');
   const tx = new Tx();
   tx.put('habits', touch({ ...habit, status }));
@@ -1002,7 +1038,7 @@ export async function setHabitStatus(id: string, status: Habit['status']): Promi
 }
 
 /** Soft-deletes a habit and its history together, so a restore is coherent. */
-export async function deleteHabit(id: string): Promise<ActionResult> {
+async function deleteHabitImpl(id: string): Promise<ActionResult> {
   const habit = requireRow('habits', id, 'habit');
   const tx = new Tx();
   const now = Date.now();
@@ -1030,7 +1066,7 @@ export interface EventInput {
   taskId?: string | null;
 }
 
-export async function createEvent(input: EventInput): Promise<ActionResult> {
+async function createEventImpl(input: EventInput): Promise<ActionResult> {
   const fields = validateEvent(input);
   const tx = new Tx();
   tx.create('calendarEvents', {
@@ -1074,7 +1110,7 @@ function validateEvent(input: EventInput) {
   };
 }
 
-export async function updateEvent(id: string, input: EventInput): Promise<ActionResult> {
+async function updateEventImpl(id: string, input: EventInput): Promise<ActionResult> {
   const existing = requireRow('calendarEvents', id, 'event');
   const fields = validateEvent(input);
   const tx = new Tx();
@@ -1088,7 +1124,7 @@ export async function updateEvent(id: string, input: EventInput): Promise<Action
  * This is what a calendar drag commits - a real persisted update, not a
  * local-only visual move.
  */
-export async function moveEvent(id: string, newStart: number): Promise<ActionResult> {
+async function moveEventImpl(id: string, newStart: number): Promise<ActionResult> {
   const event = requireRow('calendarEvents', id, 'event');
   const duration = event.end - event.start;
   const tx = new Tx();
@@ -1097,7 +1133,7 @@ export async function moveEvent(id: string, newStart: number): Promise<ActionRes
 }
 
 /** Resizes an event by moving its end. Used by the calendar resize handle. */
-export async function resizeEvent(id: string, newEnd: number): Promise<ActionResult> {
+async function resizeEventImpl(id: string, newEnd: number): Promise<ActionResult> {
   const event = requireRow('calendarEvents', id, 'event');
   if (newEnd <= event.start) {
     throw new ValidationError('An event cannot end before it starts.', {
@@ -1109,7 +1145,7 @@ export async function resizeEvent(id: string, newEnd: number): Promise<ActionRes
   return tx.commit();
 }
 
-export async function deleteEvent(id: string): Promise<ActionResult> {
+async function deleteEventImpl(id: string): Promise<ActionResult> {
   const event = requireRow('calendarEvents', id, 'event');
   const tx = new Tx();
   const now = Date.now();
@@ -1138,7 +1174,7 @@ export interface WorkoutInput {
   }>;
 }
 
-export async function logWorkout(input: WorkoutInput): Promise<ActionResult> {
+async function logWorkoutImpl(input: WorkoutInput): Promise<ActionResult> {
   const v = new Validator();
   const title = v.requiredText('title', input.title, 'Title', RULES.titleMax);
   const discipline = v.oneOf('discipline', input.discipline ?? 'Gym', ENUMS.discipline, 'Discipline');
@@ -1198,7 +1234,7 @@ export async function logWorkout(input: WorkoutInput): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function deleteWorkout(id: string): Promise<ActionResult> {
+async function deleteWorkoutImpl(id: string): Promise<ActionResult> {
   const workout = requireRow('workouts', id, 'workout');
   const tx = new Tx();
   const now = Date.now();
@@ -1222,7 +1258,7 @@ export interface JournalInput {
   tags?: string[];
 }
 
-export async function saveJournalEntry(
+async function saveJournalEntryImpl(
   id: string | null,
   input: JournalInput,
 ): Promise<ActionResult> {
@@ -1255,7 +1291,7 @@ export async function saveJournalEntry(
   return tx.commit();
 }
 
-export async function deleteJournalEntry(id: string): Promise<ActionResult> {
+async function deleteJournalEntryImpl(id: string): Promise<ActionResult> {
   const entry = requireRow('journalEntries', id, 'journal entry');
   const tx = new Tx();
   const now = Date.now();
@@ -1276,7 +1312,7 @@ export interface NoteInput {
   links?: string[];
 }
 
-export async function saveNote(id: string | null, input: NoteInput): Promise<ActionResult> {
+async function saveNoteImpl(id: string | null, input: NoteInput): Promise<ActionResult> {
   const v = new Validator();
   const title = v.requiredText('title', input.title, 'Title', RULES.titleMax);
   const content = v.optionalText('content', input.content, 'Content', RULES.noteContentMax);
@@ -1305,21 +1341,21 @@ export async function saveNote(id: string | null, input: NoteInput): Promise<Act
   return tx.commit();
 }
 
-export async function toggleNotePinned(id: string): Promise<ActionResult> {
+async function toggleNotePinnedImpl(id: string): Promise<ActionResult> {
   const note = requireRow('notes', id, 'note');
   const tx = new Tx();
   tx.put('notes', touch({ ...note, pinned: !note.pinned }));
   return tx.commit();
 }
 
-export async function toggleNoteArchived(id: string): Promise<ActionResult> {
+async function toggleNoteArchivedImpl(id: string): Promise<ActionResult> {
   const note = requireRow('notes', id, 'note');
   const tx = new Tx();
   tx.put('notes', touch({ ...note, archived: !note.archived }));
   return tx.commit();
 }
 
-export async function deleteNote(id: string): Promise<ActionResult> {
+async function deleteNoteImpl(id: string): Promise<ActionResult> {
   const note = requireRow('notes', id, 'note');
   const tx = new Tx();
   const now = Date.now();
@@ -1343,7 +1379,7 @@ export interface QuestInput {
   requirements?: Array<{ label: string; kind?: string; target?: number; refId?: string | null }>;
 }
 
-export async function createQuest(input: QuestInput): Promise<ActionResult> {
+async function createQuestImpl(input: QuestInput): Promise<ActionResult> {
   const v = new Validator();
   const title = v.requiredText('title', input.title, 'Title', RULES.titleMax);
   const objective = v.optionalText('objective', input.objective, 'Objective', RULES.descriptionMax);
@@ -1405,7 +1441,7 @@ export async function createQuest(input: QuestInput): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function toggleQuestRequirement(id: string): Promise<ActionResult> {
+async function toggleQuestRequirementImpl(id: string): Promise<ActionResult> {
   const req = requireRow('questRequirements', id, 'requirement');
   const tx = new Tx();
   const done = req.manualProgress >= req.target;
@@ -1413,7 +1449,7 @@ export async function toggleQuestRequirement(id: string): Promise<ActionResult> 
   return tx.commit();
 }
 
-export async function completeQuest(id: string): Promise<ActionResult> {
+async function completeQuestImpl(id: string): Promise<ActionResult> {
   const quest = requireRow('quests', id, 'quest');
   if (quest.status === 'COMPLETED') return { ...EMPTY_RESULT };
   const tx = new Tx();
@@ -1423,7 +1459,7 @@ export async function completeQuest(id: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function deleteQuest(id: string): Promise<ActionResult> {
+async function deleteQuestImpl(id: string): Promise<ActionResult> {
   const quest = requireRow('quests', id, 'quest');
   const tx = new Tx();
   const now = Date.now();
@@ -1449,7 +1485,7 @@ export interface RoutineInput {
   steps?: Array<{ title: string; durationMinutes?: number | null; optional?: boolean }>;
 }
 
-export async function createRoutine(input: RoutineInput): Promise<ActionResult> {
+async function createRoutineImpl(input: RoutineInput): Promise<ActionResult> {
   const v = new Validator();
   const title = v.requiredText('title', input.title, 'Title', RULES.titleMax);
   const description = v.optionalText('description', input.description, 'Description', RULES.descriptionMax);
@@ -1499,7 +1535,7 @@ export async function createRoutine(input: RoutineInput): Promise<ActionResult> 
 }
 
 /** Starts a run, or returns the one already open for today. */
-export async function startRoutineRun(routineId: string, day: DayKey = todayKey()): Promise<ActionResult> {
+async function startRoutineRunImpl(routineId: string, day: DayKey = todayKey()): Promise<ActionResult> {
   requireRow('routines', routineId, 'routine');
   const existing = store
     .live('routineRuns')
@@ -1521,7 +1557,7 @@ export async function startRoutineRun(routineId: string, day: DayKey = todayKey(
   return tx.commit();
 }
 
-export async function toggleRoutineStep(
+async function toggleRoutineStepImpl(
   runId: string,
   stepId: string,
   mode: 'complete' | 'skip' = 'complete',
@@ -1550,7 +1586,7 @@ export async function toggleRoutineStep(
 }
 
 /** Finishes a run and pays out, prorated by how much was actually done. */
-export async function finishRoutineRun(runId: string): Promise<ActionResult> {
+async function finishRoutineRunImpl(runId: string): Promise<ActionResult> {
   const run = requireRow('routineRuns', runId, 'routine run');
   if (run.completedAt != null) return { ...EMPTY_RESULT };
   const routine = requireRow('routines', run.routineId, 'routine');
@@ -1569,7 +1605,7 @@ export async function finishRoutineRun(runId: string): Promise<ActionResult> {
   return tx.commit();
 }
 
-export async function deleteRoutine(id: string): Promise<ActionResult> {
+async function deleteRoutineImpl(id: string): Promise<ActionResult> {
   const routine = requireRow('routines', id, 'routine');
   const tx = new Tx();
   const now = Date.now();
@@ -1584,7 +1620,7 @@ export async function deleteRoutine(id: string): Promise<ActionResult> {
  * Reviews
  * ================================================================== */
 
-export async function saveReview(
+async function saveReviewImpl(
   id: string | null,
   input: {
     cadence: Review['cadence'];
@@ -1640,7 +1676,7 @@ export async function saveReview(
  * ================================================================== */
 
 /** Marks unlock notifications as seen, clearing the "NEW" badges. */
-export async function markAchievementsSeen(ids: string[]): Promise<void> {
+async function markAchievementsSeenImpl(ids: string[]): Promise<void> {
   const tx = new Tx();
   let any = false;
   for (const unlock of store.live('achievementUnlocks')) {
@@ -1652,7 +1688,7 @@ export async function markAchievementsSeen(ids: string[]): Promise<void> {
   if (any) await tx.commit();
 }
 
-export async function updateSettings(patch: Partial<Settings>): Promise<void> {
+async function updateSettingsImpl(patch: Partial<Settings>): Promise<void> {
   const current = store.settings;
   const next: Settings = { ...current, ...patch, id: 'singleton', updatedAt: Date.now() };
   await store.commit([{ op: 'put', store: STORES.settings, value: next }]);
@@ -1664,7 +1700,7 @@ export async function updateSettings(patch: Partial<Settings>): Promise<void> {
  * The ledger is the source of truth; this exists so a rollup that somehow drifts
  * can always be recomputed rather than trusted. Exposed in Settings > Data.
  */
-export async function rebuildCharacterState(): Promise<CharacterState> {
+async function rebuildCharacterStateImpl(): Promise<CharacterState> {
   const events = store.live('xpEvents');
   const totalXp = Math.max(0, events.reduce((sum, e) => sum + e.amount, 0));
   const areaXp: Record<string, number> = {};
@@ -1710,3 +1746,60 @@ function areaForXpEvent(event: XpEvent): LifeArea | null {
 }
 
 export type { Goal, Habit, Note, Project, Task };
+
+/* ================================================================== *
+ * Public actions - each serialized through the write queue above.
+ * ================================================================== */
+
+export const createTask = serialized(createTaskImpl);
+export const updateTask = serialized(updateTaskImpl);
+export const completeTask = serialized(completeTaskImpl);
+export const uncompleteTask = serialized(uncompleteTaskImpl);
+export const setTaskStatus = serialized(setTaskStatusImpl);
+export const deleteTask = serialized(deleteTaskImpl);
+export const restoreTask = serialized(restoreTaskImpl);
+export const createGoal = serialized(createGoalImpl);
+export const updateGoal = serialized(updateGoalImpl);
+export const completeGoal = serialized(completeGoalImpl);
+export const reopenGoal = serialized(reopenGoalImpl);
+export const archiveGoal = serialized(archiveGoalImpl);
+export const deleteGoal = serialized(deleteGoalImpl);
+export const createProject = serialized(createProjectImpl);
+export const updateProject = serialized(updateProjectImpl);
+export const completeProject = serialized(completeProjectImpl);
+export const deleteProject = serialized(deleteProjectImpl);
+export const createMilestone = serialized(createMilestoneImpl);
+export const toggleMilestone = serialized(toggleMilestoneImpl);
+export const deleteMilestone = serialized(deleteMilestoneImpl);
+export const createHabit = serialized(createHabitImpl);
+export const updateHabit = serialized(updateHabitImpl);
+export const toggleHabitLog = serialized(toggleHabitLogImpl);
+export const protectHabitDay = serialized(protectHabitDayImpl);
+export const setHabitStatus = serialized(setHabitStatusImpl);
+export const deleteHabit = serialized(deleteHabitImpl);
+export const createEvent = serialized(createEventImpl);
+export const updateEvent = serialized(updateEventImpl);
+export const moveEvent = serialized(moveEventImpl);
+export const resizeEvent = serialized(resizeEventImpl);
+export const deleteEvent = serialized(deleteEventImpl);
+export const logWorkout = serialized(logWorkoutImpl);
+export const deleteWorkout = serialized(deleteWorkoutImpl);
+export const saveJournalEntry = serialized(saveJournalEntryImpl);
+export const deleteJournalEntry = serialized(deleteJournalEntryImpl);
+export const saveNote = serialized(saveNoteImpl);
+export const toggleNotePinned = serialized(toggleNotePinnedImpl);
+export const toggleNoteArchived = serialized(toggleNoteArchivedImpl);
+export const deleteNote = serialized(deleteNoteImpl);
+export const createQuest = serialized(createQuestImpl);
+export const toggleQuestRequirement = serialized(toggleQuestRequirementImpl);
+export const completeQuest = serialized(completeQuestImpl);
+export const deleteQuest = serialized(deleteQuestImpl);
+export const createRoutine = serialized(createRoutineImpl);
+export const startRoutineRun = serialized(startRoutineRunImpl);
+export const toggleRoutineStep = serialized(toggleRoutineStepImpl);
+export const finishRoutineRun = serialized(finishRoutineRunImpl);
+export const deleteRoutine = serialized(deleteRoutineImpl);
+export const saveReview = serialized(saveReviewImpl);
+export const markAchievementsSeen = serialized(markAchievementsSeenImpl);
+export const updateSettings = serialized(updateSettingsImpl);
+export const rebuildCharacterState = serialized(rebuildCharacterStateImpl);

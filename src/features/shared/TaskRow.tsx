@@ -10,7 +10,7 @@
  * toast if the write fails. Anything with wider consequences is not optimistic.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Checkbox, IconButton, PriorityDot, cx } from '../../ui/primitives';
 import { Icon } from '../../ui/Icon';
@@ -38,7 +38,15 @@ export function TaskRow({
   const [busy, setBusy] = useState(false);
   const done = optimistic ?? task.status === 'COMPLETED';
 
+  // A ref, not the busy state: several clicks in one tick all run before React
+  // re-renders, so a state flag cannot stop the second one. The data layer is
+  // already safe (actions are serialized); this stops one completion producing
+  // a stack of duplicate toasts.
+  const inFlight = useRef(false);
+
   const toggle = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     const next = !done;
     setOptimistic(next);
     setBusy(true);
@@ -68,6 +76,7 @@ export function TaskRow({
         err instanceof Error ? err.message : 'That could not be saved, so nothing changed.',
       );
     } finally {
+      inFlight.current = false;
       setBusy(false);
       // Let the store's real value take over once it has caught up.
       setOptimistic(null);

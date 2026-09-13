@@ -348,7 +348,28 @@ export interface HabitView {
   protectionsLeft: number;
 }
 
+/**
+ * Memoized on the store version (and the day, and the week-start setting, the
+ * only non-store inputs). Streak calculation walks each habit's history, and at
+ * a year of daily logs this is by far the most expensive selector - around
+ * 150ms for forty habits. The dashboard, the Habits screen and the reminder
+ * banner all read it on the same render, and the dashboard used to call it
+ * twice, so a single checkbox click cost roughly a third of a second.
+ *
+ * Safe because the store never mutates in place: every write bumps the version
+ * and swaps the arrays, so a cached result can never outlive its data.
+ */
+let habitsCache: { key: string; value: HabitView[] } | null = null;
+
 export function selectHabits(): HabitView[] {
+  const key = `${store.getVersion()}|${todayKey()}|${store.settings.weekStartsMonday}`;
+  if (habitsCache?.key === key) return habitsCache.value;
+  const value = computeHabits();
+  habitsCache = { key, value };
+  return value;
+}
+
+function computeHabits(): HabitView[] {
   const habits = store.live('habits');
   const logsByHabit = groupBy(store.live('habitLogs'), (l) => l.habitId);
   const today = todayKey();
@@ -446,7 +467,8 @@ export function selectDashboard(): DashboardData {
   const todayTasks = todayGroups.flatMap((g) => g.items);
   const todayDone = todayTasks.filter((v) => v.task.status === 'COMPLETED').length;
 
-  const habits = selectHabits().filter((v) => v.habit.status === 'ACTIVE' && v.dueToday);
+  const allHabits = selectHabits();
+  const habits = allHabits.filter((v) => v.habit.status === 'ACTIVE' && v.dueToday);
   const goals = selectGoals()
     .filter((v) => v.goal.status !== 'ARCHIVED' && v.goal.status !== 'COMPLETED')
     .sort((a, b) => b.progress.percent - a.progress.percent)
@@ -457,7 +479,7 @@ export function selectDashboard(): DashboardData {
     .slice(0, 3);
 
   /* --- the four header stats, all from real rows --- */
-  const bestStreak = selectHabits().reduce((max, v) => Math.max(max, v.streak), 0);
+  const bestStreak = allHabits.reduce((max, v) => Math.max(max, v.streak), 0);
   const xpToday = selectXpOnDay(today);
   const xpYesterday = selectXpOnDay(addDays(today, -1));
   const focusMinutes = focusMinutesOn(today);
@@ -1136,6 +1158,12 @@ export function search(query: string, limit = 30): SearchHit[] {
     body: string,
     route: string,
   ) => {
+    // Coerced rather than trusted. Rows reach the store from imports too, and an
+    // older or hand-edited export can lack a text field; one such row used to
+    // throw here and take the whole search - and the command palette, which
+    // calls this on every keystroke - down with it.
+    title = typeof title === 'string' ? title : '';
+    body = typeof body === 'string' ? body : '';
     const t = title.toLowerCase();
     const b = body.toLowerCase();
     let score = 0;

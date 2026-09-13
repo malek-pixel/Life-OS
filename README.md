@@ -68,6 +68,8 @@ much XP" is always answerable — see the ledger on the Analytics screen.
 **Related writes are atomic.** Completing a task updates the task, writes its XP
 event, updates the cached rollup, evaluates achievements, and schedules the next
 recurrence — all in one IndexedDB transaction. It lands completely or not at all.
+Actions also run one at a time through a single write queue, so two clicks
+arriving together cannot both act on the state from before either committed.
 
 **Soft deletes.** Deleting sets `deletedAt` rather than removing the row, so
 delete is recoverable and the undo in the toast actually works.
@@ -94,8 +96,10 @@ src/
 
 ## Data and privacy
 
-There is no server. Nothing is transmitted anywhere except the AI request, and
-only when you use the coach.
+There is no server. Your data is never transmitted except in an AI request, and
+only when you use the coach. The one other network request is for the two web
+fonts from Google Fonts. It carries no user data, but it does tell Google the
+app was opened. Offline, the fonts fall back to the system stack.
 
 - **Export** (Settings → Data) writes every table to JSON, including AI memory
   and usage logs, so "what does this app know about me" is always answerable.
@@ -139,7 +143,7 @@ does not have — see [`docs/DECISIONS.md`](docs/DECISIONS.md) §6.
 npm test
 ```
 
-Four suites, 118 tests, covering what silently corrupts data if wrong:
+Five suites, 138 tests, covering what silently corrupts data if wrong:
 
 - **`test/domain.test.ts`** — the pure logic. Streak calculation including
   protections, custom schedules, weekly targets and the rule that an unlogged
@@ -155,6 +159,9 @@ Four suites, 118 tests, covering what silently corrupts data if wrong:
   like the dashboard reporting the wrong number: a negative value counting the
   wrong way, a `+` silently dropped, `2024` gaining a thousands separator, or a
   roll-up settling one step short of its target.
+- **`test/scale.test.ts`** — every screen's selector against a heavy year of
+  data (3,000 tasks, 40 habits logged daily, a 10,000-event ledger), timed after
+  a write, with budgets tight enough to catch an accidental quadratic.
 - **`test/actions.test.ts`** — the action layer against a real IndexedDB
   (`fake-indexeddb`), covering the end-to-end flows: goal → project → task →
   complete → progress and XP propagate; habit → streak → XP; recurrence spawning

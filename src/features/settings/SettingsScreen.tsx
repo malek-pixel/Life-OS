@@ -81,7 +81,7 @@ export default function SettingsScreen() {
     <>
       <PageHeader title="Settings" subtitle="Everything here changes how Life OS actually behaves." />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,210px) minmax(0,1fr)', gap: 16, alignItems: 'start' }}>
+      <div className="settings-layout">
         <nav aria-label="Settings sections" className="card" style={{ padding: 8 }}>
           {SECTIONS.map((entry) => (
             <button
@@ -170,7 +170,7 @@ function Row({
 }) {
   return (
     <div
-      className="spread"
+      className="spread settings-row"
       style={{ padding: '13px 0', borderBottom: '1px solid var(--c-border-ghost)', gap: 16, alignItems: 'flex-start' }}
     >
       <div className="grow" style={{ minWidth: 0 }}>
@@ -181,7 +181,7 @@ function Row({
           </div>
         ) : null}
       </div>
-      <div style={{ flex: 'none' }}>{control}</div>
+      <div className="settings-row-control" style={{ flex: 'none' }}>{control}</div>
     </div>
   );
 }
@@ -739,6 +739,12 @@ function DataSection() {
                 type="file"
                 accept="application/json,.json"
                 className="los-sr"
+                // The visible "Import" button is the control; this input is only
+                // how the browser opens a file picker. Out of the tab order so
+                // keyboard users do not land on a second, invisible stop - but
+                // named anyway, in case assistive tech reaches it directly.
+                tabIndex={-1}
+                aria-label="Choose a Life OS export file to import"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -848,7 +854,7 @@ function DataSection() {
         </p>
         <Row
           label="Clear all data"
-          description="Permanently erases every goal, task, habit, note, journal entry and log in this browser."
+          description="Permanently erases every goal, task, habit, note, journal entry and log in this browser, and forgets your API key. Life OS restarts at setup."
           control={
             <Button
               variant="danger"
@@ -862,6 +868,11 @@ function DataSection() {
                   danger: true,
                   onConfirm: async () => {
                     await store.clearAll();
+                    // The key lives in browser storage, not IndexedDB, so the
+                    // wipe does not reach it on its own. Leaving a credential
+                    // behind after "clear everything" would be the one thing
+                    // the user most expects to be gone.
+                    clearApiKey();
                     toast.show('All data cleared', { tone: 'muted' });
                   },
                 })

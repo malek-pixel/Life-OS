@@ -27,6 +27,9 @@ import { groqProvider, type AiMessageInput } from '../../ai/provider';
 import { AppError } from '../../data/errors';
 import type { AiToolCallRecord } from '../../data/schema';
 
+/** How long a single coach turn may take before it is abandoned. */
+const COACH_TIMEOUT_MS = 60_000;
+
 interface Turn {
   id: string;
   role: 'user' | 'assistant';
@@ -54,6 +57,11 @@ export default function AiCoachScreen() {
   const [busy, setBusy] = useState(false);
   const [shareJournal, setShareJournal] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Leaving the screen cancels any request in flight. Without this the call -
+  // and the tool loop behind it - carried on spending API quota for a
+  // conversation nobody could see any more.
+  useEffect(() => () => abortRef.current?.abort(), []);
   const endRef = useRef<HTMLDivElement>(null);
 
   const configured = groqProvider.isConfigured();
@@ -82,6 +90,14 @@ export default function AiCoachScreen() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    // A hung connection would otherwise spin until someone noticed the Stop
+    // button. The flag separates a timeout from the user cancelling, so the
+    // message says which one happened.
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, COACH_TIMEOUT_MS);
 
     // Only prose turns go back as history; proposals are UI state, not context.
     const history: AiMessageInput[] = [...turns, userTurn]
@@ -111,10 +127,15 @@ export default function AiCoachScreen() {
           id: `e-${Date.now()}`,
           role: 'assistant',
           content: '',
-          error: appError ? appError.message : 'The coach could not be reached.',
+          error: timedOut
+            ? 'Groq did not respond within a minute, so the request was stopped. Nothing was changed - try again.'
+            : appError
+              ? appError.message
+              : 'The coach could not be reached.',
         },
       ]);
     } finally {
+      clearTimeout(timeout);
       setBusy(false);
       abortRef.current = null;
     }

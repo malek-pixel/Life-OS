@@ -19,7 +19,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { Sidebar } from './Sidebar';
-import { TopBar } from './TopBar';
+import { TopBar, breadcrumbFor } from './TopBar';
 import { CommandPalette } from './CommandPalette';
 import { QuickCapture } from './QuickCapture';
 import { ThemeProvider } from './ThemeProvider';
@@ -115,6 +115,14 @@ function Shell() {
   const settings = useSettings();
   const { compact, narrow } = useViewport();
   const location = useLocation();
+
+  // Tab title follows the route, from the same source as the breadcrumb, so
+  // history entries and bookmarks say which screen they are.
+  useEffect(() => {
+    const crumbs = breadcrumbFor(location.pathname);
+    const name = crumbs[crumbs.length - 1]?.label;
+    document.title = name ? `${name} · Life OS` : 'Life OS';
+  }, [location.pathname]);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);

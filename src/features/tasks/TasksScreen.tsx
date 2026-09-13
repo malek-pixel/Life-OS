@@ -183,6 +183,7 @@ function TaskDetail({
   onEdit: (task: Task) => void;
 }) {
   const toast = useToast();
+  const [statusPending, setStatusPending] = useState(false);
   const confirm = useConfirm();
 
   if (!view) return null;
@@ -245,13 +246,27 @@ function TaskDetail({
           <Button
             variant={done ? 'secondary' : 'primary'}
             icon={done ? 'undo' : 'check'}
+            loading={statusPending}
             onClick={async () => {
-              if (done) {
-                await uncompleteTask(task.id);
-                toast.show('Task reopened', { tone: 'muted' });
-              } else {
-                const result = await completeTask(task.id);
-                toast.show(`Completed · +${result.xpAwarded} XP`, { tone: 'xp' });
+              // Guarded and caught: a double click used to toast twice, and a
+              // failed write surfaced as nothing at all.
+              if (statusPending) return;
+              setStatusPending(true);
+              try {
+                if (done) {
+                  await uncompleteTask(task.id);
+                  toast.show('Task reopened', { tone: 'muted' });
+                } else {
+                  const result = await completeTask(task.id);
+                  toast.show(
+                    result.xpAwarded > 0 ? `Completed · +${result.xpAwarded} XP` : 'Completed',
+                    { tone: result.xpAwarded > 0 ? 'xp' : 'ok' },
+                  );
+                }
+              } catch (err) {
+                toast.showError(err instanceof Error ? err.message : 'That could not be saved, so nothing changed.');
+              } finally {
+                setStatusPending(false);
               }
             }}
           >

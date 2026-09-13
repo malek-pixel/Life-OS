@@ -342,7 +342,10 @@ export class LifeOsStore {
     this.collections = emptyCollections();
     this.status = 'idle';
     this.error = null;
-    this.version = 0;
+    // Bumped, never reset. The version is a cache key - for React and for
+    // memoized selectors - so reusing a number that once meant different data
+    // would hand back a stale result.
+    this.version++;
     this.hydrating = null;
   }
 }

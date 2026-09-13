@@ -125,7 +125,7 @@ export default function CalendarScreen() {
 
       <Card flush>
         <div
-          className="spread"
+          className="spread calendar-toolbar"
           style={{ padding: '12px 16px', borderBottom: '1px solid var(--c-border-faint)', gap: 12 }}
         >
           <div className="row" style={{ gap: 6 }}>
