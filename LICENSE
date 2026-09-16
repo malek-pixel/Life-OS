@@ -1,0 +1,36 @@
+Copyright (c) 2026 Malek Fahmy (malek-pixel). All rights reserved.
+
+PROPRIETARY — NOT OPEN SOURCE
+
+This repository is published for portfolio and demonstration purposes. Being
+publicly readable on GitHub does not place it in the public domain and does
+not grant a licence to use it.
+
+No permission is granted to copy, modify, merge, publish, distribute,
+sublicense, sell, or create derivative works from the contents of this
+repository, in whole or in part, except as set out below or as permitted by
+applicable law.
+
+WHAT YOU MAY DO WITHOUT ASKING
+
+- View and read the source code.
+- Fork or clone the repository through GitHub's own interface, which the
+  platform's Terms of Service permit for any public repository.
+- Quote short excerpts for commentary, review, teaching, or assessment, with
+  attribution.
+
+WHAT REQUIRES WRITTEN PERMISSION
+
+- Use of this code, in whole or in substantial part, in any other project,
+  product, or service, commercial or otherwise.
+- Redistribution of the code or its documentation outside GitHub.
+- Deploying a copy of this application beyond personal evaluation.
+
+To request permission, open an issue on the repository.
+
+This is a personal, single-owner application. No user data is collected or
+stored by anyone other than the owner; deploying your own copy is at your own
+risk and requires your own credentials (see .env.example and README.md).
+
+Nothing in this file is a warranty, and nothing in it is legal advice. The
+software is provided as is, without warranty of any kind, express or implied.
