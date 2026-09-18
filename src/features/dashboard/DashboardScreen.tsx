@@ -20,7 +20,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Card, CardHeader, Button, EmptyState, ProgressBar, StatTile, Badge } from '../../ui/primitives';
 import { Icon } from '../../ui/Icon';
 import { useToast } from '../../ui/overlays';
-import { TaskRow } from '../shared/TaskRow';
+import { DailyPlanCard } from './DailyPlanCard';
 import { useSelector, useSettings } from '../../app/hooks';
 import { selectDashboard, areaHex } from '../../domain/selectors';
 import { reminderToastsEnabled, selectNudges } from '../../domain/nudges';
@@ -83,51 +83,8 @@ export default function DashboardScreen() {
       <div className="grid-2">
         {/* ================= left column ================= */}
         <div className="stack" style={{ gap: 16 }}>
-          {/* ---------- today ---------- */}
-          <Card flush>
-            <div style={{ padding: '16px 16px 0' }}>
-              <CardHeader
-                kicker="TODAY"
-                title={
-                  data.todayTotal === 0
-                    ? 'Nothing scheduled'
-                    : `${data.todayDone} of ${data.todayTotal} done`
-                }
-                action={
-                  <Link to="/tasks" style={{ fontSize: 'var(--fs-md)', color: 'var(--c-text-dim)' }}>
-                    All tasks →
-                  </Link>
-                }
-              />
-              {data.todayTotal > 0 ? (
-                <div style={{ marginBottom: 14 }}>
-                  <ProgressBar
-                    percent={(data.todayDone / data.todayTotal) * 100}
-                    label={`${data.todayDone} of ${data.todayTotal} tasks done today`}
-                  />
-                </div>
-              ) : null}
-            </div>
-
-            {data.todayTasks.length === 0 ? (
-              <EmptyState
-                icon="tasks"
-                title="No tasks due today"
-                body="Nothing is scheduled for today. That is either a clear day or a sign something needs a due date."
-                action={
-                  <Button variant="secondary" icon="plus" onClick={() => navigate('/tasks')}>
-                    Plan today
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="list">
-                {data.todayTasks.map((view) => (
-                  <TaskRow key={view.task.id} view={view} />
-                ))}
-              </div>
-            )}
-          </Card>
+          {/* ---------- today: the daily plan ---------- */}
+          <DailyPlanCard />
 
           {/* ---------- habits due today ---------- */}
           <Card flush>

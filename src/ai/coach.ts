@@ -311,7 +311,7 @@ export async function runCoachTurn(
  * shows up as a spike in the Settings counter rather than as a mysteriously
  * broken assistant.
  */
-async function logUsage(entry: {
+export async function logUsage(entry: {
   model: string;
   totalPrompt: number;
   totalCompletion: number;

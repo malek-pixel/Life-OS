@@ -49,7 +49,15 @@ import {
   type XpEvent,
   type XpSource,
 } from './schema';
-import { toDayKey, today as todayKey, type DayKey } from '../domain/dates';
+import { dayKeyToMs, endOfDay, toDayKey, today as todayKey, type DayKey } from '../domain/dates';
+import {
+  MAX_DAILY_TASKS,
+  isGoalActive,
+  isPlanTaskValid,
+  isQuestActive,
+  normalizeTitle,
+  planTasksFor,
+} from '../domain/dailyPlan';
 import {
   levelForXp,
   xpForGoal,
@@ -609,6 +617,146 @@ function areaForTask(task: Task): LifeArea | null {
     if (goal) return goal.area;
   }
   return null;
+}
+
+/* ================================================================== *
+ * Daily plan
+ * ================================================================== */
+
+export interface PlannedTaskInput {
+  title: string;
+  description: string;
+  goalId: string | null;
+  questId: string | null;
+  priority: Priority;
+  estimatedMinutes: number | null;
+}
+
+export interface DailyPlanWrite {
+  day: DayKey;
+  /** Automatic runs abort when the day was planned meanwhile (another tab or device). */
+  onlyIfUnplanned: boolean;
+  /** Plan tasks to take out: generated ones are soft-deleted, the user's own just leave the plan. */
+  drop: string[];
+  /** Existing tasks to put in today's plan: surfaced tasks, or yesterday's unfinished ones. */
+  carry: string[];
+  create: PlannedTaskInput[];
+}
+
+export interface DailyPlanResult {
+  written: boolean;
+  created: number;
+  carried: number;
+  dropped: number;
+}
+
+/**
+ * Writes a day's plan in one transaction.
+ *
+ * The planner decides what to write; this re-checks it against the store as it
+ * is *now*, inside the write queue: links must point at live goals and quests,
+ * titles may not repeat, and the day never holds more than MAX_DAILY_TASKS.
+ * Open generated tasks from earlier days that were not carried are archived,
+ * never deleted, so the user does not wake up to a pile of stale ones.
+ *
+ * Nothing here completes a task or touches goal progress.
+ */
+async function applyDailyPlanImpl(input: DailyPlanWrite): Promise<DailyPlanResult> {
+  const none: DailyPlanResult = { written: false, created: 0, carried: 0, dropped: 0 };
+  if (input.onlyIfUnplanned && store.settings.dailyPlanDate === input.day) return none;
+
+  const tx = new Tx();
+  const now = Date.now();
+  const dueAt = endOfDayMs(input.day);
+  const dropped = new Set(input.drop);
+  let droppedCount = 0;
+
+  for (const id of dropped) {
+    const task = store.byId('tasks', id);
+    if (!task || task.deletedAt != null || task.status === 'COMPLETED') continue;
+    tx.put(
+      'tasks',
+      task.generated ? { ...task, deletedAt: now, updatedAt: now } : { ...task, plannedFor: null, updatedAt: now },
+    );
+    droppedCount++;
+  }
+
+  const current = planTasksFor(input.day).filter((t) => !dropped.has(t.id));
+  const titles = new Set(current.map((t) => normalizeTitle(t.title)));
+  let slots = MAX_DAILY_TASKS - current.length;
+
+  let carried = 0;
+  const carriedIds = new Set<string>();
+  for (const id of input.carry) {
+    if (slots <= 0) break;
+    const task = store.byId('tasks', id);
+    if (!task || task.deletedAt != null || task.status === 'COMPLETED' || task.status === 'ARCHIVED') continue;
+    if (task.plannedFor === input.day || titles.has(normalizeTitle(task.title))) continue;
+    if (!isPlanTaskValid(task)) continue;
+    tx.put('tasks', {
+      ...task,
+      plannedFor: input.day,
+      // A carried generated task moves to today; the user's own due date is theirs to change.
+      dueAt: task.generated ? dueAt : task.dueAt,
+      updatedAt: now,
+    });
+    titles.add(normalizeTitle(task.title));
+    carriedIds.add(task.id);
+    carried++;
+    slots--;
+  }
+
+  let created = 0;
+  let order = nextOrder(store.live('tasks'));
+  for (const draft of input.create) {
+    if (slots <= 0) break;
+    const title = draft.title.trim().slice(0, RULES.titleMax);
+    if (!title || titles.has(normalizeTitle(title))) continue;
+    const goalId = draft.goalId && isGoalActive(store.byId('goals', draft.goalId)) ? draft.goalId : null;
+    const questId = draft.questId && isQuestActive(store.byId('quests', draft.questId)) ? draft.questId : null;
+    // Every generated task must serve a real goal or quest.
+    if (!goalId && !questId) continue;
+    tx.create('tasks', {
+      id: newId(),
+      ...stamps(now),
+      projectId: null,
+      goalId,
+      parentTaskId: null,
+      habitId: null,
+      title,
+      description: draft.description.trim().slice(0, RULES.descriptionMax),
+      status: 'TODO',
+      priority: draft.priority,
+      dueAt,
+      completedAt: null,
+      estimatedMinutes: draft.estimatedMinutes,
+      actualMinutes: null,
+      recurrenceRule: null,
+      recurrenceParentId: null,
+      orderIndex: order++,
+      questId,
+      plannedFor: input.day,
+      generated: true,
+    });
+    titles.add(normalizeTitle(title));
+    created++;
+    slots--;
+  }
+
+  // Unfinished generated tasks from earlier days that were not carried forward.
+  for (const task of store.live('tasks')) {
+    if (!task.generated || !task.plannedFor || task.plannedFor >= input.day) continue;
+    if (task.status === 'COMPLETED' || task.status === 'ARCHIVED' || carriedIds.has(task.id)) continue;
+    tx.put('tasks', { ...task, status: 'ARCHIVED', updatedAt: now });
+  }
+
+  tx.put('settings', { ...store.settings, dailyPlanDate: input.day, updatedAt: now });
+  await tx.commit();
+  return { written: true, created, carried, dropped: droppedCount };
+}
+
+function endOfDayMs(day: DayKey): number {
+  return endOfDay(dayKeyToMs(day));
 }
 
 /* ================================================================== *
@@ -1823,3 +1971,4 @@ export const saveReview = serialized(saveReviewImpl);
 export const markAchievementsSeen = serialized(markAchievementsSeenImpl);
 export const updateSettings = serialized(updateSettingsImpl);
 export const rebuildCharacterState = serialized(rebuildCharacterStateImpl);
+export const applyDailyPlan = serialized(applyDailyPlanImpl);

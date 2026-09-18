@@ -190,6 +190,15 @@ export interface Task extends BaseEntity {
   /** Set on instances generated from a recurring template. */
   recurrenceParentId: string | null;
   orderIndex: number;
+  /** The quest this task advances. Optional: rows written before it existed lack it. */
+  questId?: string | null;
+  /**
+   * The local day (YYYY-MM-DD) whose daily plan this task belongs to. Set on
+   * generated tasks and on existing tasks the planner surfaced. See domain/dailyPlan.ts.
+   */
+  plannedFor?: string | null;
+  /** True when the daily planner created this task rather than the user. */
+  generated?: boolean;
 }
 
 export interface Habit extends BaseEntity {
@@ -519,6 +528,10 @@ export interface Settings {
   /* onboarding */
   onboardingCompletedAt: number | null;
   onboardingStep: number;
+
+  /* daily plan */
+  /** The local day the daily task plan was last generated for. Stops regeneration on refresh. */
+  dailyPlanDate?: string | null;
 
   updatedAt: number;
 }

@@ -137,8 +137,14 @@ export function goalProgress(
 ): GoalProgress {
   const liveProjects = projects.filter((p) => isLive(p) && p.status !== 'ARCHIVED');
   // Tasks attached straight to the goal, not via one of its projects.
+  // A planner-generated task only counts once it is done: generating today's
+  // plan must never drag a goal's percentage down.
   const directTasks = tasks.filter(
-    (t) => isLive(t) && t.projectId == null && t.status !== 'ARCHIVED',
+    (t) =>
+      isLive(t) &&
+      t.projectId == null &&
+      t.status !== 'ARCHIVED' &&
+      !(t.generated && t.status !== 'COMPLETED'),
   );
 
   const base = {

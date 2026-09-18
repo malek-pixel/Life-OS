@@ -10,7 +10,7 @@
  * toast if the write fails. Anything with wider consequences is not optimistic.
  */
 
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 
 import { Checkbox, IconButton, PriorityDot, cx } from '../../ui/primitives';
 import { Icon } from '../../ui/Icon';
@@ -25,10 +25,16 @@ export function TaskRow({
   view,
   onOpen,
   showContext = true,
+  subtitle,
+  actions,
 }: {
   view: TaskView;
   onOpen?: (view: TaskView) => void;
   showContext?: boolean;
+  /** Replaces the default context line (the daily plan shows what the task advances). */
+  subtitle?: ReactNode;
+  /** Extra controls before the XP value. */
+  actions?: ReactNode;
 }) {
   const toast = useToast();
   const { task } = view;
@@ -111,7 +117,7 @@ export function TaskRow({
         }}
       >
         <div className={cx('row-title', 'truncate', done && 'row-title-done')}>{task.title}</div>
-        {showContext && (view.contextLabel || due) ? (
+        {subtitle ?? (showContext && (view.contextLabel || due) ? (
           <div className="row-meta truncate">
             {view.contextLabel}
             {view.contextLabel && due ? ' · ' : ''}
@@ -121,7 +127,7 @@ export function TaskRow({
               </span>
             ) : null}
           </div>
-        ) : null}
+        ) : null)}
       </button>
 
       {view.subtasks.length > 0 ? (
@@ -133,6 +139,8 @@ export function TaskRow({
           {view.subtasks.filter((s) => s.status === 'COMPLETED').length}/{view.subtasks.length}
         </span>
       ) : null}
+
+      {actions}
 
       <span
         className="mono"
