@@ -656,9 +656,9 @@ export interface DailyPlanResult {
  * The planner decides what to write; this re-checks it against the store as it
  * is *now*, inside the write queue: links must point at live goals and quests,
  * titles may not repeat, and the day never holds more than MAX_DAILY_TASKS.
- * Unfinished plan tasks from earlier days are cleared, never carried over:
- * generated ones are deleted and the user's own leave the plan, so a new day
- * starts clean instead of inheriting yesterday's leftovers.
+ * Unfinished plan tasks from earlier days are deleted, never carried over,
+ * whether the planner wrote them or the user did, so a new day starts clean
+ * instead of inheriting yesterday's leftovers.
  *
  * Nothing here completes a task or touches goal progress.
  */
@@ -745,17 +745,12 @@ async function applyDailyPlanImpl(input: DailyPlanWrite): Promise<DailyPlanResul
   }
 
   // A day's plan does not outlive the day. Anything left unchecked from an
-  // earlier day is removed: generated tasks are deleted outright, and the
-  // user's own tasks simply leave the plan (the task itself is theirs to keep).
+  // earlier day is deleted - the planner's tasks and the user's own alike - so
+  // a new day never starts by inheriting yesterday's leftovers.
   for (const task of store.live('tasks')) {
     if (!task.plannedFor || task.plannedFor >= input.day) continue;
     if (task.status === 'COMPLETED' || carriedIds.has(task.id)) continue;
-    tx.put(
-      'tasks',
-      task.generated
-        ? { ...task, plannedFor: null, deletedAt: now, updatedAt: now }
-        : { ...task, plannedFor: null, updatedAt: now },
-    );
+    tx.put('tasks', { ...task, plannedFor: null, deletedAt: now, updatedAt: now });
   }
 
   tx.put('settings', { ...store.settings, dailyPlanDate: input.day, updatedAt: now });

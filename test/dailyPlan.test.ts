@@ -273,7 +273,7 @@ describe('day rollover', () => {
     await ensureDailyPlan({ useAi: false });
     const plan = planTasksFor(today());
     expect(plan.length).toBeLessThanOrEqual(MAX_DAILY_TASKS);
-    // Yesterday's leftovers are gone, not carried into today and not left lying around.
+    // Yesterday's leftovers are gone - planner's and the user's own alike.
     expect(store.live('tasks').filter((t) => t.plannedFor === yesterday)).toHaveLength(0);
     expect(plan.every((t) => !staleIds.has(t.id))).toBe(true);
     // Nothing open is left behind in yesterday's plan to show as overdue.
