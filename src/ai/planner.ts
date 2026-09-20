@@ -18,7 +18,7 @@ import { applyDailyPlan, type DailyPlanResult, type PlannedTaskInput } from '../
 import { store } from '../data/store';
 import { SYNC_AVAILABLE, syncNow } from '../data/sync';
 import type { Priority, Task } from '../data/schema';
-import { addDays, daysBetween, toDayKey, today as todayKey, type DayKey } from '../domain/dates';
+import { addDays, toDayKey, today as todayKey, type DayKey } from '../domain/dates';
 import {
   MAX_DAILY_TASKS,
   buildCandidates,
@@ -166,13 +166,13 @@ async function plan(
 
   const slots = Math.max(0, MAX_DAILY_TASKS - completed.length - keep.length);
 
-  // Yesterday's unfinished generated tasks compete for today's slots on merit.
-  const carryPool = mode === 'new-day' ? carryCandidates(day, candidates) : [];
+  // Nothing is carried over: an unfinished task from an earlier day is gone, and
+  // today is planned fresh from what matters now.
   const base = cloneTaken(taken);
-  const picks = selectCandidates([...candidates, ...carryPool], slots, taken);
+  const picks = selectCandidates(candidates, slots, taken);
 
   const carry = picks.filter((c) => c.existingTaskId).map((c) => c.existingTaskId!);
-  // What the AI must avoid: today's kept tasks plus whatever is being carried in.
+  // What the AI must avoid: today's kept tasks plus any task already in the plan.
   const aiTaken = cloneTaken(base);
   for (const c of picks) if (c.existingTaskId) markTaken(aiTaken, c);
   let create: PlannedTaskInput[] = picks.filter((c) => !c.existingTaskId).map(toInput);
@@ -240,26 +240,6 @@ function candidateFromTask(task: Task, candidates: PlanCandidate[]): PlanCandida
     recurring: match?.recurring ?? false,
     reason: 'already planned',
   };
-}
-
-/** Unfinished generated tasks from the last three days, as candidates for today. */
-function carryCandidates(day: DayKey, candidates: PlanCandidate[]): PlanCandidate[] {
-  const since = addDays(day, -3);
-  return store
-    .live('tasks')
-    .filter(
-      (t) =>
-        t.generated &&
-        t.plannedFor != null &&
-        t.plannedFor < day &&
-        t.plannedFor >= since &&
-        t.status !== 'COMPLETED' &&
-        t.status !== 'ARCHIVED' &&
-        isPlanTaskValid(t),
-    )
-    .map((t) => candidateFromTask(t, candidates))
-    // A task carried for days is a sign it is the wrong task, not a reason to keep pushing it.
-    .map((c) => ({ ...c, score: c.score - 6 * Math.max(0, daysBetween(store.byId('tasks', c.existingTaskId!)!.plannedFor!, day) - 1) }));
 }
 
 function toInput(c: PlanCandidate): PlannedTaskInput {

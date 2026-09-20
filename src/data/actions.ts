@@ -638,7 +638,7 @@ export interface DailyPlanWrite {
   onlyIfUnplanned: boolean;
   /** Plan tasks to take out: generated ones are soft-deleted, the user's own just leave the plan. */
   drop: string[];
-  /** Existing tasks to put in today's plan: surfaced tasks, or yesterday's unfinished ones. */
+  /** Existing tasks to put in today's plan: tasks of the user's own, surfaced for today. */
   carry: string[];
   create: PlannedTaskInput[];
 }
@@ -656,8 +656,9 @@ export interface DailyPlanResult {
  * The planner decides what to write; this re-checks it against the store as it
  * is *now*, inside the write queue: links must point at live goals and quests,
  * titles may not repeat, and the day never holds more than MAX_DAILY_TASKS.
- * Open generated tasks from earlier days that were not carried are archived,
- * never deleted, so the user does not wake up to a pile of stale ones.
+ * Unfinished plan tasks from earlier days are cleared, never carried over:
+ * generated ones are deleted and the user's own leave the plan, so a new day
+ * starts clean instead of inheriting yesterday's leftovers.
  *
  * Nothing here completes a task or touches goal progress.
  */
@@ -743,11 +744,18 @@ async function applyDailyPlanImpl(input: DailyPlanWrite): Promise<DailyPlanResul
     slots--;
   }
 
-  // Unfinished generated tasks from earlier days that were not carried forward.
+  // A day's plan does not outlive the day. Anything left unchecked from an
+  // earlier day is removed: generated tasks are deleted outright, and the
+  // user's own tasks simply leave the plan (the task itself is theirs to keep).
   for (const task of store.live('tasks')) {
-    if (!task.generated || !task.plannedFor || task.plannedFor >= input.day) continue;
-    if (task.status === 'COMPLETED' || task.status === 'ARCHIVED' || carriedIds.has(task.id)) continue;
-    tx.put('tasks', { ...task, status: 'ARCHIVED', updatedAt: now });
+    if (!task.plannedFor || task.plannedFor >= input.day) continue;
+    if (task.status === 'COMPLETED' || carriedIds.has(task.id)) continue;
+    tx.put(
+      'tasks',
+      task.generated
+        ? { ...task, plannedFor: null, deletedAt: now, updatedAt: now }
+        : { ...task, plannedFor: null, updatedAt: now },
+    );
   }
 
   tx.put('settings', { ...store.settings, dailyPlanDate: input.day, updatedAt: now });
