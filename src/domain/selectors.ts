@@ -266,7 +266,7 @@ export interface TaskGroup {
 }
 
 /**
- * The Today view: overdue first, then today, then anything unscheduled that is
+ * The Today view: today, then anything unscheduled that is
  * already in progress. Subtasks are excluded - they show under their parent.
  */
 export function selectTodayGroups(): TaskGroup[] {
@@ -278,14 +278,13 @@ export function selectTodayGroups(): TaskGroup[] {
   const todayStart = startOfDay(dayKeyToMs(today));
 
   const open = views.filter((v) => v.task.status !== 'COMPLETED');
-  const overdue = open.filter((v) => v.task.dueAt != null && v.task.dueAt < todayStart);
+  // Leftovers from earlier days never show here; the day rollover deletes them.
   const dueToday = views.filter(
     (v) => v.task.dueAt != null && v.task.dueAt >= todayStart && v.task.dueAt <= todayEnd,
   );
   const inProgress = open.filter((v) => v.task.dueAt == null && v.task.status === 'IN_PROGRESS');
 
   const groups: TaskGroup[] = [];
-  if (overdue.length > 0) groups.push({ label: 'OVERDUE', items: sortViews(overdue) });
   groups.push({ label: 'TODAY', items: sortViews(dueToday) });
   if (inProgress.length > 0) groups.push({ label: 'IN PROGRESS', items: sortViews(inProgress) });
   return groups;

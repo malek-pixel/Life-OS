@@ -147,8 +147,10 @@ describe('daily plan generation', () => {
     const plan = planTasksFor(today());
     expect(plan.length).toBeLessThanOrEqual(MAX_DAILY_TASKS);
     expect(plan.length).toBeGreaterThan(0);
-    // Surfaced, not duplicated: no new tasks were created for them.
-    expect(store.live('tasks').filter((t) => t.title.startsWith('Overdue'))).toHaveLength(10);
+    // Leftovers from earlier days are deleted; only those surfaced into today survive.
+    const left = store.live('tasks').filter((t) => t.title.startsWith('Overdue'));
+    expect(left.every((t) => t.plannedFor === today())).toBe(true);
+    expect(left.length).toBeLessThanOrEqual(MAX_DAILY_TASKS);
   });
 
   it('does not change goal progress by generating tasks, only by completing them', async () => {

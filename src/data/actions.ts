@@ -744,11 +744,15 @@ async function applyDailyPlanImpl(input: DailyPlanWrite): Promise<DailyPlanResul
     slots--;
   }
 
-  // A day's plan does not outlive the day. Anything left unchecked from an
-  // earlier day is deleted - the planner's tasks and the user's own alike - so
-  // a new day never starts by inheriting yesterday's leftovers.
+  // A day does not outlive itself. Anything left unchecked from an earlier day
+  // is deleted - planned for that day or due on it, the planner's tasks and the
+  // user's own alike - so a new day never starts by inheriting leftovers.
+  // Recurring tasks are spared so their series keeps going.
+  const dayStart = dayKeyToMs(input.day);
   for (const task of store.live('tasks')) {
-    if (!task.plannedFor || task.plannedFor >= input.day) continue;
+    const plannedBefore = task.plannedFor != null && task.plannedFor < input.day;
+    const dueBefore = task.dueAt != null && task.dueAt < dayStart && !task.recurrenceRule;
+    if (!plannedBefore && !dueBefore) continue;
     if (task.status === 'COMPLETED' || carriedIds.has(task.id)) continue;
     tx.put('tasks', { ...task, plannedFor: null, deletedAt: now, updatedAt: now });
   }
